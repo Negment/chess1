@@ -68,10 +68,12 @@
       <label class="sub">候補数 <select id="mN"><option value="3">3</option><option value="5" selected>5</option></select></label>
     </div>
     <div class="elo">
-      <label class="sub">自分のレート <b id="eloMeV">1500</b><input type="range" id="eloMe" min="700" max="2500" step="100" value="1500"></label>
-      <label class="sub">相手のレート <b id="eloOppV">1500</b><input type="range" id="eloOpp" min="700" max="2500" step="100" value="1500"></label>
-      <div class="scale"><span>700(下限)</span><span>1600(中央)</span><span>2500(上限)</span></div>
-      <div class="sub">この範囲の外は、予想の精度が落ちる可能性があります。</div>
+      <div class="sub">自分のレート</div>
+      <div class="eloRow"><input type="range" id="eloMeR" min="0" max="5000" step="50" value="1500"><input type="number" id="eloMe" min="0" max="5000" step="1" value="1500" inputmode="numeric"></div>
+      <div class="sub">相手のレート</div>
+      <div class="eloRow"><input type="range" id="eloOppR" min="0" max="5000" step="50" value="1500"><input type="number" id="eloOpp" min="0" max="5000" step="1" value="1500" inputmode="numeric"></div>
+      <div class="sub">入力できる範囲は0〜5000です。目安は、下限700・中央1600・上限2500です。</div>
+      <div class="sub" id="eloWarn" style="color:#c0392b"></div>
     </div>
     <div id="mres"></div>
     <div class="sub">確率は「そのレートの人間がこの手を選ぶ割合」の予想で、強さの評価ではありません。</div>
