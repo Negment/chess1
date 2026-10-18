@@ -47,6 +47,14 @@
   </div>
 
   <div class="card">
+    <h2>エンジンの状態</h2>
+    <div class="row"><b>Stockfish</b><span id="sfSt" class="sub">未起動</span><button id="sfGo">起動</button></div>
+    <div class="row"><b>Maia</b><span id="maSt" class="sub">未起動</span><button id="maGo">起動</button></div>
+    <div class="row"><span id="cacheN" class="sub"></span><button id="cacheClr">保存した結果を消す</button></div>
+    <div class="sub">起動しなくても、最善手を押せば自動で起動します。同じ局面・同じ設定なら、計算済みの結果を再利用します。</div>
+  </div>
+
+  <div class="card">
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
       <button id="aMe">自分</button><button id="aOpp">相手</button><button id="aBoth">両方</button>
