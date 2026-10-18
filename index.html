@@ -40,7 +40,12 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 button.go{background:var(--accent);color:#fff;border-color:var(--accent)}
 input[type=text]{flex:1;min-width:140px}
 textarea{width:100%;height:54px;font-size:12px;resize:vertical}
-#st{font-weight:600;margin-top:8px}
+#st{font-weight:600;margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid var(--dk)}
+#st.ck{background:#e8892b;color:#fff;border-color:#e8892b;font-size:17px}
+#st.mate{background:#c0392b;color:#fff;border-color:#c0392b;font-size:19px}
+#st.stale{background:#4a6fa5;color:#fff;border-color:#4a6fa5;font-size:19px}
+.ov{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;pointer-events:none;padding:.4em 1em;border-radius:10px;color:#fff;font-weight:800;font-size:calc(var(--bs)/12);white-space:nowrap;box-shadow:0 4px 18px rgba(0,0,0,.45)}
+.ov.mate{background:rgba(192,57,43,.93)}.ov.stale{background:rgba(74,111,165,.93)}
 #msg{min-height:1.4em;color:var(--opp);margin:6px 0 0;font-size:14px}
 #hl{display:flex;flex-wrap:wrap;gap:4px;max-height:130px;overflow:auto}
 #hl button{padding:2px 7px;font-size:13px}
@@ -99,9 +104,11 @@ h2{font-size:14px;margin:0 0 6px}
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
       <button id="aMe">自分</button><button id="aOpp">相手</button><button id="aBoth">両方</button>
-      <label class="sub">時間 <select id="tl"><option value="1000">1秒</option><option value="3000" selected>3秒</option><option value="10000">10秒</option></select></label>
+      <label class="sub">時間 <select id="tl"><option value="1000">1秒</option><option value="3000" selected>3秒</option><option value="10000">10秒</option><option value="30000">30秒</option><option value="60000">60秒</option></select></label>
       <label class="sub"><input type="checkbox" id="useTB" checked>7枚以下はテーブルベース</label>
       <label class="sub"><input type="checkbox" id="useSF" checked>Stockfishを使う</label>
+      <label class="sub">候補数 <select id="npv"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+      <label class="sub">繰り返し <select id="rep"><option value="avoid" selected>同一局面に戻る手を避ける</option><option value="ban3">3回目になる手を禁止</option><option value="off">考慮しない</option></select></label>
     </div>
     <div id="res" style="margin-top:6px"><span class="sub">最善手は表示するだけで、自動では指しません。</span></div>
   </div>
@@ -110,6 +117,24 @@ h2{font-size:14px;margin:0 0 6px}
     <h2>盤面の複製(FEN)</h2>
     <textarea id="fen" spellcheck="false"></textarea>
     <div class="row"><button id="fenLoad">FENを読み込む</button><button id="fenCopy">コピー</button></div>
+  </div>
+
+  <div class="card">
+    <h2>引き分けなどの判定(表示のオン・オフ)</h2>
+    <div class="row">
+      <label class="sub"><input type="checkbox" class="jd" id="jStale" checked>ステイルメイト</label>
+      <label class="sub"><input type="checkbox" class="jd" id="jInsuf" checked>駒不足</label>
+      <label class="sub"><input type="checkbox" class="jd" id="jRep" checked>同一局面3回</label>
+      <label class="sub"><input type="checkbox" class="jd" id="jFifty" checked>50手ルール</label>
+    </div>
+    <div class="sub">オフにした判定は、状態欄にも盤面にも出しません。最善手を計算するエンジン側のルールは変わりません。</div>
+  </div>
+
+  <div class="card">
+    <h2>棋譜(コピー・貼り付け用)</h2>
+    <textarea id="kifu" spellcheck="false"></textarea>
+    <div class="row"><button id="kCopy">コピー</button><button id="kLoad">この棋譜で盤面を作り直す</button></div>
+    <div class="sub">貼り付けた棋譜は、[FEN "..."] の見出しがあればその局面から、なければ初期配置から読み込みます。</div>
   </div>
 
   <div class="card">
@@ -338,21 +363,23 @@ function scoreText(sc){
 
 /* ---------- テーブルベース(Lichess) ---------- */
 const CAT={win:"勝ち確定",loss:"負け確定",draw:"引き分け確定","cursed-win":"勝ち(50手ルールで引き分け)","blessed-loss":"負け(50手ルールで引き分け)","maybe-win":"おそらく勝ち","maybe-loss":"おそらく負け",unknown:"不明"};
-async function tb(s,ms){
+const INV={win:"loss",loss:"win","cursed-win":"blessed-loss","blessed-loss":"cursed-win",draw:"draw"};
+async function tb(s,ms,am,n){
   const ac=new AbortController(),t=setTimeout(()=>ac.abort(),5000);
   try{
     const r=await fetch("https://tablebase.lichess.ovh/standard?fen="+encodeURIComponent(toFen({...s,c:""})),{signal:ac.signal});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const j=await r.json();
     if(!j.moves||!j.moves.length)return null;
-    const m=ms.find(x=>uci(x)===j.moves[0].uci);
-    if(!m)return null;
-    const ex=j.dtm!=null?` / 詰みまで約${Math.ceil(Math.abs(j.dtm)/2)}手`:"";
-    return {m,src:"tb",text:(CAT[j.category]||j.category)+ex};
+    const o=[];for(const x of j.moves){const m=am.find(y=>uci(y)===x.uci);if(m)o.push({m,c:x.category,top:x===j.moves[0]})}
+    if(!o.length)return null;
+    const tx=x=>CAT[INV[x.c]||x.c]||x.c;
+    const ex=o[0].top&&j.dtm!=null?` / 詰みまで約${Math.ceil(Math.abs(j.dtm)/2)}手`:"";
+    return {m:o[0].m,src:"tb",text:(o[0].top?CAT[j.category]||j.category:tx(o[0]))+ex,alts:o.slice(1,n).map(x=>({m:x.m,text:tx(x)}))};
   }finally{clearTimeout(t)}
 }
 /* ---------- Stockfish(同じフォルダのファイルをWeb Workerで起動) ---------- */
-const SF_FILES=["stockfish-19-lite-single.js","stockfish-18-lite-single.js","stockfish.js"];
+const SF_FILES=["stockfish-19-single.js","stockfish-18-single.js","stockfish-19-lite-single.js","stockfish-18-lite-single.js","stockfish.js"];
 let sf=null,sfNone=false;
 async function sfLoad(){
   if(sf)return sf;if(sfNone)return null;
@@ -371,39 +398,46 @@ async function sfLoad(){
   }
   sfNone=true;return null;
 }
-function sfBest(w,s,ms,t){
+function sfBest(w,s,am,all,t,N){
   return new Promise(res=>{
-    let sc=null,dep=0;
-    const to=setTimeout(()=>w.postMessage("stop"),t+5000);
+    const L={},to=setTimeout(()=>w.postMessage("stop"),t+5000);
     w.onmessage=e=>{
       const l=String(e.data);
-      if(l.startsWith("info")&&l.includes(" score ")&&!/lowerbound|upperbound/.test(l)){
-        const d=l.match(/ depth (\d+)/),c=l.match(/score cp (-?\d+)/),m=l.match(/score mate (-?\d+)/);
-        if(d)dep=+d[1];if(c)sc={cp:+c[1]};else if(m)sc={mate:+m[1]};
+      if(l.startsWith("info")&&l.includes(" pv ")&&l.includes(" score ")&&!/lowerbound|upperbound/.test(l)){
+        const i=+((l.match(/multipv (\d+)/)||[0,1])[1]),d=l.match(/ depth (\d+)/),c=l.match(/score cp (-?\d+)/),m=l.match(/score mate (-?\d+)/),p=l.match(/ pv (\S+)/);
+        L[i]={dep:d?+d[1]:0,sc:c?{cp:+c[1]}:m?{mate:+m[1]}:null,u:p[1]};
       }
-      if(l.startsWith("bestmove")){clearTimeout(to);const u=l.split(" ")[1];res({m:ms.find(x=>uci(x)===u),sc,dep})}
+      if(l.startsWith("bestmove")){clearTimeout(to);res(Object.keys(L).sort((a,b)=>a-b).map(k=>({...L[k],m:am.find(x=>uci(x)===L[k].u)})).filter(x=>x.m))}
     };
-    w.postMessage("ucinewgame");w.postMessage("position fen "+toFen(s));w.postMessage("go movetime "+t);
+    w.postMessage("setoption name MultiPV value "+Math.min(N,am.length));
+    w.postMessage("ucinewgame");w.postMessage("position fen "+toFen(s));
+    w.postMessage("go movetime "+t+(am.length<all.length?" searchmoves "+am.map(uci).join(" "):""));
   });
 }
+const sfTxt=sc=>!sc?"":sc.mate!=null?(sc.mate>0?`${sc.mate}手で詰み`:`${-sc.mate}手で詰まされる`):scoreText(sc.cp);
 async function best(s){
   const ms=legal(s);if(!ms.length)return null;
-  let note="";
+  const N=+$("npv").value,rm=$("rep").value,lim=rm==="ban3"?2:1;
+  let am=ms,note="";
+  if(rm!=="off"){
+    const ok=ms.filter(m=>prior(make(s,m))<lim);
+    if(ok.length&&ok.length<ms.length){am=ok;note=`繰り返しになる${ms.length-ok.length}手を除外`}
+    else if(!ok.length)note="どの手も繰り返しになります";
+  }
+  const nt=note?" / "+note:"";
   if(s.b.filter(Boolean).length<=7&&$("useTB").checked){
-    try{const r=await tb(s,ms);if(r)return r}catch(e){note="テーブルベースに接続できないため探索に切替"}
+    try{const r=await tb(s,ms,am,N);if(r){r.text+=nt;return r}}catch(e){note=(note?note+" / ":"")+"テーブルベースに接続できないため探索に切替"}
   }
   if($("useSF").checked){
     const w=await sfLoad();
     if(w){
-      const r=await sfBest(w,s,ms,+$("tl").value);
-      if(r.m){
-        const e=!r.sc?"":r.sc.mate!=null?(r.sc.mate>0?`${r.sc.mate}手で詰み`:`${-r.sc.mate}手で詰まされる`):scoreText(r.sc.cp);
-        return {m:r.m,src:"sf",text:`${w.fname} / 深さ${r.dep}手 / ${e}${note?" / "+note:""}`};
-      }
+      const L=await sfBest(w,s,am,ms,+$("tl").value,N);
+      if(L.length)return {m:L[0].m,src:"sf",text:`${w.fname} / 深さ${L[0].dep}手 / ${sfTxt(L[0].sc)}${note?" / "+note:""}`,
+        alts:L.slice(1).map(x=>({m:x.m,text:`深さ${x.dep}手 / ${sfTxt(x.sc)}`}))};
     }else note=(note?note+" / ":"")+"Stockfishを読み込めないため自作エンジンに切替";
   }
   await new Promise(r=>setTimeout(r,30));
-  const r=search(s,ms,+$("tl").value,8);
+  const r=search(s,am,+$("tl").value,8);
   return {m:r.m,src:"se",text:`深さ${r.depth}手 / ${scoreText(r.score)}${note?" / "+note:""}`};
 }
 
@@ -419,6 +453,18 @@ function validate(s){
   return "";
 }
 function msg(t){$("msg").textContent=t||""}
+const rkey=s=>toFen(s).split(" ").slice(0,4).join(" ");
+function cnt(s){const k=rkey(s);let c=0;for(let i=Math.max(0,pos-S().h);i<=pos;i++)if(rkey(hist[i].s)===k)c++;return c}
+function prior(ns){return ns.h===0?0:cnt(ns)}
+function kifuText(){
+  let st=0;for(let i=hist.length-1;i>0;i--)if(!hist[i].mv){st=i;break}
+  const base=toFen(hist[st].s);let o=base!==toFen(parseFen(START))?`[SetUp "1"]\n[FEN "${base}"]\n\n`:"",first=true;
+  for(let i=st+1;i<hist.length;i++){
+    const s=hist[i-1].s,sn=hist[i].label.replace(/^\d+[.…]/,"");
+    o+=(s.t==="w"?`${s.n}. `:first?`${s.n}... `:"")+sn+" ";first=false;
+  }
+  return o.trim();
+}
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
@@ -430,6 +476,12 @@ function doMove(m){
 }
 
 /* ---------- 描画 ---------- */
+function insuf(s){
+  const ps=[];s.b.forEach((p,i)=>{if(p&&p.toLowerCase()!=="k")ps.push([p.toLowerCase(),((i>>3)+(i&7))%2])});
+  if(!ps.length)return true;
+  if(ps.length===1)return ps[0][0]==="n"||ps[0][0]==="b";
+  return ps.every(x=>x[0]==="b"&&x[1]===ps[0][1]);
+}
 function render(){
   const s=S(),err=validate(s);
   const ms=mode==="play"&&!err?legal(s):[];
@@ -446,7 +498,10 @@ function render(){
     h+=`<div class="${cl.join(" ")}" data-q="${q}">`
       +(p?`<span class="pc ${isW(p)?"w":"k"}">${glyph(p)}</span>`:"")+"</div>";
   }
-  $("bd").innerHTML=h+'<svg id="ar" viewBox="0 0 8 8"></svg>';
+  let ov="";
+  if(!err&&!legal(s).length)ov=inCheck(s,s.t==="w")?`<div class="ov mate">チェックメイト<br><small>${s.t==="w"?"黒":"白"}の勝ち</small></div>`:$("jStale").checked?'<div class="ov stale">ステイルメイト<br><small>引き分け</small></div>':"";
+  if(!ov&&!err&&$("jInsuf").checked&&insuf(s))ov='<div class="ov stale">引き分け<br><small>駒が足りません(チェックメイト不可)</small></div>';
+  $("bd").innerHTML=h+'<svg id="ar" viewBox="0 0 8 8"></svg>'+ov;
   $("rk").innerHTML=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
   $("fl").innerHTML=[...F].map((x,i)=>`<div>${flipped?F[7-i]:x}</div>`).join("");
   drawArrows();
@@ -454,12 +509,16 @@ function render(){
   if(err)st+=" ／ "+err;
   else{
     const n=legal(s).length,c=inCheck(s,s.t==="w");
-    if(!n)st+=c?" ／ チェックメイト":" ／ ステイルメイト(引き分け)";
-    else if(c)st+=" ／ チェック";
-    if(s.h>=100)st+=" ／ 50手ルール(引き分け請求可)";
+    if(!n)st+=c?" ／ チェックメイト!("+(s.t==="w"?"黒":"白")+"の勝ち)":$("jStale").checked?" ／ ステイルメイト(引き分け)":" ／ 指せる手がありません";
+    else if(c)st+=" ／ ⚠ チェック!";
+    if($("jInsuf").checked&&insuf(s))st+=" ／ 引き分け(駒不足でチェックメイトできません)";
+    if($("jFifty").checked&&s.h>=100)st+=" ／ 50手ルール(引き分け請求可)";
+    const rc=$("jRep").checked?cnt(s):0;if(rc>=3)st+=" ／ 同一局面3回(引き分け請求可)";else if(rc===2)st+=" ／ 同一局面2回目";
   }
   $("st").textContent=st;
+  $("st").className=err?"":!legal(s).length?(inCheck(s,s.t==="w")?"mate":$("jStale").checked?"stale":""):inCheck(s,s.t==="w")?"ck":$("jInsuf").checked&&insuf(s)?"stale":"";
   $("fen").value=toFen(s);
+  if(document.activeElement!==$("kifu"))$("kifu").value=kifuText();
   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
   $("mPlay").classList.toggle("on",mode==="play");$("mEdit").classList.toggle("on",mode==="edit");
   $("editBox").hidden=mode!=="edit";
@@ -475,11 +534,13 @@ function drawArrows(){
   o+="</defs>";
   for(const r of results){
     if(!r.m)continue;
-    const[x1,y1]=P(r.m.f);let[x2,y2]=P(r.m.t);
-    const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy)||1;
-    x2-=dx/L*.3;y2-=dy/L*.3;
     const c=r.w==="me"?"#1f9d55":"#d6452f";
-    o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width=".16" stroke-opacity=".8" marker-end="url(#m${r.w})"/>`;
+    [[r.m,.8,.16],...(r.alts||[]).map(a=>[a.m,.35,.1])].forEach(([m,op,wd])=>{
+      const[x1,y1]=P(m.f);let[x2,y2]=P(m.t);
+      const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy)||1;
+      x2-=dx/L*.3;y2-=dy/L*.3;
+      o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${wd}" stroke-opacity="${op}" marker-end="url(#m${r.w})"/>`;
+    });
   }
   svg.innerHTML=o;
 }
@@ -491,6 +552,7 @@ function renderRes(pending){
     if(!r.m){h+=`<div class="res"><b class="${r.w}">${who}</b> <span class="sub">${r.note||"指せる手がありません"}</span></div>`;continue}
     h+=`<div class="res"><b class="${r.w}">${who}</b><span class="san">${r.san}</span>`
       +`<span class="tag ${r.src}">${r.src==="tb"?"確定(テーブルベース)":r.src==="sf"?"予想(Stockfish)":"予想(探索)"}</span><br><small>${r.text}</small>`
+      +(r.alts||[]).map((a,i)=>`<br><small>${i+2}番手: <b>${a.san}</b> ／ ${a.text}</small>`).join("")
       +(r.w==="me"?` <button data-play="${results.indexOf(r)}">この手を指す</button>`:` <small>※相手が手番ならの手</small>`)+"</div>";
   }
   if(pending)h+=`<div class="res sub">${pending}</div>`;
@@ -538,6 +600,20 @@ document.querySelectorAll(".cr").forEach(x=>x.onchange=()=>{
 $("fenLoad").onclick=()=>{
   try{commit(parseFen($("fen").value),"FEN読込");msg("")}catch(e){msg(e.message)}
 };
+$("kCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("kifu").value);msg("棋譜をコピーしました")}catch(e){$("kifu").select();document.execCommand("copy")}};
+$("kLoad").onclick=()=>{
+  const tx=$("kifu").value,fm=tx.match(/\[FEN\s+"([^"]+)"\]/);
+  let base;try{base=fm?parseFen(fm[1]):parseFen(START)}catch(e){msg("FENを読み込めません");return}
+  const toks=tx.replace(/\[[^\]]*\]/g,"").replace(/\{[^}]*\}/g,"").replace(/\([^)]*\)/g,"").replace(/\$\d+/g,"").replace(/\d+\s*\.+/g,"").split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
+  if(!confirm("現在の履歴を、この棋譜で置き換えます。よろしいですか?"))return;
+  hist=[{s:base,label:fm?"読込局面":"初期配置"}];pos=0;reset();
+  for(const t of toks){
+    const m=parseTok(S(),t);
+    if(!m){msg(`「${t}」で止まりました(ここまでは読み込み済み)`);render();return}
+    doMove(m);
+  }
+  msg("");render();
+};
 $("fenCopy").onclick=async()=>{
   try{await navigator.clipboard.writeText($("fen").value);msg("")}
   catch(e){$("fen").select();document.execCommand("copy")}
@@ -580,7 +656,8 @@ async function analyze(which){
     }
     const r=await best(st);
     if(tk!==token)return;
-    results.push(r?{w,...r,san:san(st,r.m)}:{w});
+    if(r){const pc=prior(make(st,r.m));if(pc)r.text+=` ／ ※この手は同一局面${pc+1}回目になります`}
+    results.push(r?{w,...r,san:san(st,r.m),alts:(r.alts||[]).map(a=>({...a,san:san(st,a.m)}))}:{w});
   }
   if(tk===token){renderRes();drawArrows()}
 }
@@ -588,6 +665,7 @@ $("aMe").onclick=()=>analyze("me");
 $("aOpp").onclick=()=>analyze("opp");
 $("aBoth").onclick=()=>analyze("both");
 
+document.querySelectorAll(".jd").forEach(x=>x.onchange=render);
 render();
 </script>
 </body>
