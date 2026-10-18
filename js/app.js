@@ -263,7 +263,17 @@ $("mOpp").onclick=()=>maiaRun("opp");
 
 
 $("kifu").addEventListener("input",()=>{kifuDirty=true});
-$("sfGo").onclick=()=>{sfLoad(true)};
+$("sfGo").onclick=()=>{sfProbe().then(()=>sfLoad(true))};
 $("maGo").onclick=()=>{maiaLoad().catch(()=>{})};
 $("cacheClr").onclick=()=>{CACHE.clear();MCACHE.clear();cacheInfo()};
 cacheInfo();
+
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));
+  document.querySelectorAll(".tab").forEach(t=>{t.hidden=t.dataset.t!==b.dataset.t});
+});
+$("sfSel").onchange=sfReset;
+$("maVar").onchange=maiaVariant;
+$("eloMe").oninput=()=>setSt("eloMeV",$("eloMe").value);
+$("eloOpp").oninput=()=>setSt("eloOppV",$("eloOpp").value);
+sfProbe();
