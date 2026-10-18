@@ -241,7 +241,7 @@ function renderMaia(){
 }
 async function maiaRun(who){
   const s=S(),err=validate(s);if(err){msg(err);return}
-  let st=s,se=+$("eloMe").value||1500,oe=+$("eloOpp").value||1500;
+  let st=s,se=eloVal("eloMe"),oe=eloVal("eloOpp");
   if(who==="opp"){
     if(inCheck(s,s.t==="w")){mres={items:[],note:"手番側がチェックされているため、相手の手番としては計算できません"};renderMaia();return}
     st={...s,t:s.t==="w"?"b":"w",e:-1};[se,oe]=[oe,se];
@@ -274,6 +274,14 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
 });
 $("sfSel").onchange=sfReset;
 $("maVar").onchange=maiaVariant;
-$("eloMe").oninput=()=>setSt("eloMeV",$("eloMe").value);
-$("eloOpp").oninput=()=>setSt("eloOppV",$("eloOpp").value);
+function eloVal(id){const v=parseInt($(id).value,10);return isNaN(v)?1500:Math.max(0,Math.min(5000,v))}
+function eloWarn(){
+  const o=["eloMe","eloOpp"].some(i=>{const v=eloVal(i);return v<700||v>2500});
+  $("eloWarn").textContent=o?"目安の範囲(700〜2500)の外です。予想の精度が落ちる可能性があります。":"";
+}
+for(const[n,r]of[["eloMe","eloMeR"],["eloOpp","eloOppR"]]){
+  $(r).oninput=()=>{$(n).value=$(r).value;eloWarn()};
+  $(n).oninput=()=>{const v=parseInt($(n).value,10);if(!isNaN(v))$(r).value=Math.max(0,Math.min(5000,v));eloWarn()};
+  $(n).onchange=()=>{$(n).value=eloVal(n);$(r).value=$(n).value;eloWarn()};
+}
 sfProbe();
