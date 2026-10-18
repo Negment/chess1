@@ -19,23 +19,35 @@ async function tb(s,ms,am,n){
 /* ---------- Stockfish(同じフォルダのファイルをWeb Workerで起動) ---------- */
 const SF_DIRS=["engines/stockfish/",""];   // まずこのフォルダ、なければ直下を探す
 const SF_FILES=["stockfish-19-single.js","stockfish-18-single.js","stockfish-19-lite-single.js","stockfish-18-lite-single.js","stockfish.js"];
-let sf=null,sfNone=false;
-async function sfLoad(){
-  if(sf)return sf;if(sfNone)return null;
-  for(const f of SF_DIRS.flatMap(d=>SF_FILES.map(n=>d+n))){
-    try{
-      const w=new Worker(f);
-      const ok=await new Promise(res=>{
-        const to=setTimeout(()=>res(false),20000);
-        w.onmessage=e=>{if(String(e.data).trim()==="uciok"){clearTimeout(to);res(true)}};
-        w.onerror=()=>{clearTimeout(to);res(false)};
-        w.postMessage("uci");
-      });
-      if(ok){w.fname=f;sf=w;return sf}
-      w.terminate();
-    }catch(e){}
-  }
-  sfNone=true;return null;
+let sf=null,sfNone=false,sfP=null;
+const setSt=(id,t)=>{const x=$(id);if(x)x.textContent=t};
+function sfLoad(force){
+  if(sf)return Promise.resolve(sf);
+  if(force)sfNone=false;
+  if(sfNone)return Promise.resolve(null);
+  if(!sfP)sfP=sfInit().finally(()=>{sfP=null});
+  return sfP;
+}
+async function sfInit(){
+  const t0=Date.now();let cur="";
+  const tick=setInterval(()=>setSt("sfSt",`起動中… ${cur}(${Math.round((Date.now()-t0)/1000)}秒)`),500);
+  try{
+    for(const f of SF_DIRS.flatMap(d=>SF_FILES.map(n=>d+n))){
+      cur=f;setSt("sfSt","起動中… "+f);
+      try{
+        const w=new Worker(f);
+        const ok=await new Promise(res=>{
+          const to=setTimeout(()=>res(false),90000);
+          w.onmessage=ev=>{if(String(ev.data).trim()==="uciok"){clearTimeout(to);res(true)}};
+          w.onerror=()=>{clearTimeout(to);res(false)};
+          w.postMessage("uci");
+        });
+        if(ok){w.fname=f;sf=w;setSt("sfSt","準備完了: "+f);return sf}
+        w.terminate();
+      }catch(x){}
+    }
+    sfNone=true;setSt("sfSt","起動できませんでした(自作エンジンで代替)");return null;
+  }finally{clearInterval(tick)}
 }
 function sfBest(w,s,am,all,t,N){
   return new Promise(res=>{
@@ -49,14 +61,17 @@ function sfBest(w,s,am,all,t,N){
       if(l.startsWith("bestmove")){clearTimeout(to);res(Object.keys(L).sort((a,b)=>a-b).map(k=>({...L[k],m:am.find(x=>uci(x)===L[k].u)})).filter(x=>x.m))}
     };
     w.postMessage("setoption name MultiPV value "+Math.min(N,am.length));
-    w.postMessage("ucinewgame");w.postMessage("position fen "+toFen(s));
+    w.postMessage("position fen "+toFen(s));
     w.postMessage("go movetime "+t+(am.length<all.length?" searchmoves "+am.map(uci).join(" "):""));
   });
 }
 const sfTxt=sc=>!sc?"":sc.mate!=null?(sc.mate>0?`${sc.mate}手で詰み`:`${-sc.mate}手で詰まされる`):scoreText(sc.cp);
+const CACHE=new Map(),MCACHE=new Map();
+const cacheInfo=()=>setSt("cacheN","保存した計算結果: "+(CACHE.size+MCACHE.size)+"件");
+function keep(key,N,t,r){CACHE.set(key,{N,t,res:{...r,alts:r.alts?r.alts.slice():undefined}});cacheInfo();return r}
 async function best(s){
   const ms=legal(s);if(!ms.length)return null;
-  const N=+$("npv").value,rm=$("rep").value,lim=rm==="ban3"?2:1;
+  const N=+$("npv").value,t=+$("tl").value,rm=$("rep").value,lim=rm==="ban3"?2:1;
   let am=ms,note="";
   if(rm!=="off"){
     const ok=ms.filter(m=>prior(make(s,m))<lim);
@@ -64,22 +79,25 @@ async function best(s){
     else if(!ok.length)note="どの手も繰り返しになります";
   }
   const nt=note?" / "+note:"";
+  const key=rkey(s)+"|"+(am.length<ms.length?am.map(uci).join(","):"*")+"|"+($("useTB").checked?1:0)+($("useSF").checked?1:0);
+  const c=CACHE.get(key);
+  if(c&&c.N>=N&&(c.res.src==="tb"||c.t>=t)&&(c.res.src!=="se"||sfNone||!$("useSF").checked))
+    return {...c.res,text:c.res.text+" ／ 保存済みの結果を再利用",alts:(c.res.alts||[]).slice(0,N-1)};
   if(s.b.filter(Boolean).length<=7&&$("useTB").checked){
-    try{const r=await tb(s,ms,am,N);if(r){r.text+=nt;return r}}catch(e){note=(note?note+" / ":"")+"テーブルベースに接続できないため探索に切替"}
+    try{const r=await tb(s,ms,am,N);if(r){r.text+=nt;return keep(key,N,t,r)}}catch(x){note=(note?note+" / ":"")+"テーブルベースに接続できないため探索に切替"}
   }
   if($("useSF").checked){
     const w=await sfLoad();
     if(w){
-      const L=await sfBest(w,s,am,ms,+$("tl").value,N);
-      if(L.length)return {m:L[0].m,src:"sf",text:`${w.fname} / 深さ${L[0].dep}手 / ${sfTxt(L[0].sc)}${note?" / "+note:""}`,
-        alts:L.slice(1).map(x=>({m:x.m,text:`深さ${x.dep}手 / ${sfTxt(x.sc)}`}))};
+      const L=await sfBest(w,s,am,ms,t,N);
+      if(L.length)return keep(key,N,t,{m:L[0].m,src:"sf",text:`${w.fname} / 深さ${L[0].dep}手 / ${sfTxt(L[0].sc)}${note?" / "+note:""}`,
+        alts:L.slice(1).map(x=>({m:x.m,text:`深さ${x.dep}手 / ${sfTxt(x.sc)}`}))});
     }else note=(note?note+" / ":"")+"Stockfishを読み込めないため自作エンジンに切替";
   }
   await new Promise(r=>setTimeout(r,30));
-  const r=search(s,am,+$("tl").value,8);
-  return {m:r.m,src:"se",text:`深さ${r.depth}手 / ${scoreText(r.score)}${note?" / "+note:""}`};
+  const r=search(s,am,t,8);
+  return keep(key,N,t,{m:r.m,src:"se",text:`深さ${r.depth}手 / ${scoreText(r.score)}${note?" / "+note:""}`});
 }
-
 
 /* ---------- Maia(人間らしい手) ---------- */
 // maia3-js を engines/maia/ に置く。ファイル名が違う場合は module をそれに合わせる。
@@ -88,16 +106,26 @@ const MAIA_CFG={
   variant:"5m",                   // 5m は npm パッケージに同梱
   modelUrl:null                   // 同梱以外のモデルを使うときだけURLを書く
 };
-let maia=null;
-async function maiaLoad(prog){
-  if(maia)return maia;
-  const mod=await import(new URL(MAIA_CFG.module,location.href).href);
-  const o={variant:MAIA_CFG.variant,onProgress:(l,t)=>prog&&prog("モデル読み込み中"+(t?" "+Math.round(l/t*100)+"%":""))};
-  if(MAIA_CFG.modelUrl)o.url=new URL(MAIA_CFG.modelUrl,location.href).href;
-  const m=new mod.Maia3(o);await m.load();maia=m;return m;
+let maia=null,maP=null;
+function maiaLoad(prog){
+  if(maia)return Promise.resolve(maia);
+  if(!maP)maP=(async()=>{
+    setSt("maSt","起動中…");
+    try{
+      const mod=await import(new URL(MAIA_CFG.module,location.href).href);
+      const o={variant:MAIA_CFG.variant,onProgress:(l,t)=>{const p="モデル読み込み中"+(t?" "+Math.round(l/t*100)+"%":"");setSt("maSt",p);prog&&prog(p)}};
+      if(MAIA_CFG.modelUrl)o.url=new URL(MAIA_CFG.modelUrl,location.href).href;
+      const m=new mod.Maia3(o);await m.load();maia=m;setSt("maSt","準備完了("+MAIA_CFG.variant+")");return m;
+    }catch(x){setSt("maSt","起動失敗: "+(x&&x.message||x));throw x}
+  })().finally(()=>{maP=null});
+  return maP;
 }
 async function maiaPredict(s,selfElo,oppoElo,N,prog){
+  const key=rkey(s)+"|"+selfElo+"|"+oppoElo,c=MCACHE.get(key);
+  if(c&&c.N>=N)return c.list.slice(0,N);
   const m=await maiaLoad(prog),mv=legal(s);
   const r=await m.predict({fen:toFen(s),selfElo,oppoElo,topK:N});
-  return r.candidates.map(c=>({m:mv.find(x=>uci(x)===c.uci),p:c.probability,win:c.winProbability})).filter(x=>x.m).slice(0,N);
+  const list=r.candidates.map(x=>({m:mv.find(y=>uci(y)===x.uci),p:x.probability,win:x.winProbability})).filter(x=>x.m).slice(0,N);
+  MCACHE.set(key,{N,list});cacheInfo();
+  return list;
 }
