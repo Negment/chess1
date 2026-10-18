@@ -46,14 +46,8 @@
     <div class="row"><input type="text" id="mv" placeholder="例: Nc3" autocomplete="off" autocapitalize="off"><button id="mvGo" class="go">指す</button></div>
   </div>
 
-  <div class="card">
-    <h2>エンジンの状態</h2>
-    <div class="row"><b>Stockfish</b><span id="sfSt" class="sub">未起動</span><button id="sfGo">起動</button></div>
-    <div class="row"><b>Maia</b><span id="maSt" class="sub">未起動</span><button id="maGo">起動</button></div>
-    <div class="row"><span id="cacheN" class="sub"></span><button id="cacheClr">保存した結果を消す</button></div>
-    <div class="sub">起動しなくても、最善手を押せば自動で起動します。同じ局面・同じ設定なら、計算済みの結果を再利用します。</div>
-  </div>
-
+  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="kf">棋譜・盤面</button><button data-t="set">設定</button></div>
+  <div class="tab" data-t="ana">
   <div class="card">
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
@@ -71,18 +65,46 @@
     <h2>人間らしい手(Maia)</h2>
     <div class="row">
       <button id="mMe">自分が指しそうな手</button><button id="mOpp">相手が指しそうな手</button>
-      <label class="sub">自分のレート <input type="number" id="eloMe" value="1500" step="100" style="width:80px"></label>
-      <label class="sub">相手のレート <input type="number" id="eloOpp" value="1500" step="100" style="width:80px"></label>
       <label class="sub">候補数 <select id="mN"><option value="3">3</option><option value="5" selected>5</option></select></label>
+    </div>
+    <div class="elo">
+      <label class="sub">自分のレート <b id="eloMeV">1500</b><input type="range" id="eloMe" min="700" max="2500" step="100" value="1500"></label>
+      <label class="sub">相手のレート <b id="eloOppV">1500</b><input type="range" id="eloOpp" min="700" max="2500" step="100" value="1500"></label>
+      <div class="scale"><span>700(下限)</span><span>1600(中央)</span><span>2500(上限)</span></div>
+      <div class="sub">この範囲の外は、予想の精度が落ちる可能性があります。</div>
     </div>
     <div id="mres"></div>
     <div class="sub">確率は「そのレートの人間がこの手を選ぶ割合」の予想で、強さの評価ではありません。</div>
+  </div>
+  </div>
+  <div class="tab" data-t="kf" hidden>
+  <div class="card">
+    <h2>棋譜(コピー・貼り付け用)</h2>
+    <textarea id="kifu" spellcheck="false"></textarea>
+    <div class="row"><button id="kCopy">コピー</button><button id="kLoad">この棋譜で盤面を作り直す</button></div>
+    <div class="sub">貼り付けた棋譜は、[FEN "..."] の見出しがあればその局面から、なければ初期配置から読み込みます。</div>
+  </div>
+
+  <div class="card">
+    <h2>履歴(クリックでその局面へ)</h2>
+    <div id="hl"></div>
   </div>
 
   <div class="card">
     <h2>盤面の複製(FEN)</h2>
     <textarea id="fen" spellcheck="false"></textarea>
     <div class="row"><button id="fenLoad">FENを読み込む</button><button id="fenCopy">コピー</button></div>
+  </div>
+  </div>
+  <div class="tab" data-t="set" hidden>
+  <div class="card">
+    <h2>エンジンの状態</h2>
+    <div class="row"><b>Stockfish</b><select id="sfSel"><option value="auto">自動(大きい版を優先)</option></select><button id="sfGo">起動</button></div>
+    <div class="sub" id="sfSt">未起動</div>
+    <div class="row"><b>Maia</b><select id="maVar"><option value="5m">5m(同梱・軽い)</option><option value="23m">23m(初回に約90MB取得)</option><option value="79m">79m(初回に約300MB取得)</option></select><button id="maGo">起動</button></div>
+    <div class="sub" id="maSt">未起動</div>
+    <div class="row"><span id="cacheN" class="sub"></span><button id="cacheClr">保存した結果を消す</button></div>
+    <div class="sub">起動しなくても、最善手を押せば自動で起動します。同じ局面・同じ設定なら、計算済みの結果を再利用します。</div>
   </div>
 
   <div class="card">
@@ -95,17 +117,6 @@
     </div>
     <div class="sub">オフにした判定は、状態欄にも盤面にも出しません。最善手を計算するエンジン側のルールは変わりません。</div>
   </div>
-
-  <div class="card">
-    <h2>棋譜(コピー・貼り付け用)</h2>
-    <textarea id="kifu" spellcheck="false"></textarea>
-    <div class="row"><button id="kCopy">コピー</button><button id="kLoad">この棋譜で盤面を作り直す</button></div>
-    <div class="sub">貼り付けた棋譜は、[FEN "..."] の見出しがあればその局面から、なければ初期配置から読み込みます。</div>
-  </div>
-
-  <div class="card">
-    <h2>履歴(クリックでその局面へ)</h2>
-    <div id="hl"></div>
   </div>
 </div>
 </main>
