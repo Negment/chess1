@@ -1,0 +1,75 @@
+{
+  "name": "maia3-js",
+  "version": "0.2.0",
+  "description": "JavaScript inference for Maia3 (Chessformer) chess models — human-like move prediction with per-candidate WDL.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.node.d.ts",
+      "import": "./dist/index.node.js"
+    },
+    "./web": {
+      "types": "./dist/web/index.web.d.ts",
+      "import": "./dist/web/index.web.js"
+    }
+  },
+  "files": [
+    "dist",
+    "data",
+    "models/maia3_5m.onnx",
+    "models/maia3_5m.onnx.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "keywords": [
+    "chess",
+    "maia",
+    "maia3",
+    "chessformer",
+    "onnx",
+    "transformer",
+    "ai",
+    "neural-network"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.web.json",
+    "build:node": "tsc -p tsconfig.json",
+    "build:web": "tsc -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "tsx scripts/validate.ts",
+    "generate-moves": "tsx scripts/generate-moves.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "chess.js": "^1.0.0-beta.8"
+  },
+  "peerDependencies": {
+    "onnxruntime-node": "^1.17.0",
+    "onnxruntime-web": "^1.17.0"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-node": {
+      "optional": true
+    },
+    "onnxruntime-web": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "onnxruntime-node": "^1.17.0",
+    "onnxruntime-web": "^1.17.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}
