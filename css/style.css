@@ -53,3 +53,7 @@ textarea{width:100%;height:54px;font-size:12px;resize:vertical}
 small,.sub{opacity:.75;font-size:13px}
 h2{font-size:14px;margin:0 0 6px}
 .tag.mh{background:#2f6fd6}
+.tabs{display:flex;gap:6px}.tabs button{flex:1;padding:8px 4px;font-weight:700}
+.tab{display:flex;flex-direction:column;gap:10px}.tab[hidden]{display:none}
+
+.elo{display:flex;flex-direction:column;gap:6px;margin:8px 0}.elo label{display:block}.elo input[type=range]{width:100%;display:block;margin-top:4px}.scale{display:flex;justify-content:space-between;font-size:12px;opacity:.8}
