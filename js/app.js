@@ -1,7 +1,7 @@
 "use strict";
 /* ---------- 状態・履歴 ---------- */
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
-let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null;
+let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,kifuDirty=false;
 const S=()=>hist[pos].s;
 function validate(s){
   const wk=s.b.filter(p=>p==="K").length,bk=s.b.filter(p=>p==="k").length;
@@ -15,9 +15,9 @@ const rkey=s=>toFen(s).split(" ").slice(0,4).join(" ");
 function cnt(s){const k=rkey(s);let c=0;for(let i=Math.max(0,pos-S().h);i<=pos;i++)if(rkey(hist[i].s)===k)c++;return c}
 function prior(ns){return ns.h===0?0:cnt(ns)}
 function kifuText(){
-  let st=0;for(let i=hist.length-1;i>0;i--)if(!hist[i].mv){st=i;break}
+  let st=0;for(let i=pos;i>0;i--)if(!hist[i].mv){st=i;break}
   const base=toFen(hist[st].s);let o=base!==toFen(parseFen(START))?`[SetUp "1"]\n[FEN "${base}"]\n\n`:"",first=true;
-  for(let i=st+1;i<hist.length;i++){
+  for(let i=st+1;i<=pos;i++){
     const s=hist[i-1].s,sn=hist[i].label.replace(/^\d+[.…]/,"");
     o+=(s.t==="w"?`${s.n}. `:first?`${s.n}... `:"")+sn+" ";first=false;
   }
@@ -26,7 +26,7 @@ function kifuText(){
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
-function reset(){sel=null;results=[];mres=null;token++;render()}
+function reset(){kifuDirty=false;sel=null;results=[];mres=null;token++;render()}
 function doMove(m){
   const s=S();
   const lb=`${s.n}${s.t==="w"?".":"…"}${san(s,m)}`;
@@ -76,7 +76,7 @@ function render(){
   $("st").textContent=st;
   $("st").className=err?"":!legal(s).length?(inCheck(s,s.t==="w")?"mate":$("jStale").checked?"stale":""):inCheck(s,s.t==="w")?"ck":$("jInsuf").checked&&insuf(s)?"stale":"";
   $("fen").value=toFen(s);
-  if(document.activeElement!==$("kifu"))$("kifu").value=kifuText();
+  if(!kifuDirty)$("kifu").value=kifuText();
   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
   $("mPlay").classList.toggle("on",mode==="play");$("mEdit").classList.toggle("on",mode==="edit");
   $("editBox").hidden=mode!=="edit";
@@ -260,3 +260,10 @@ async function maiaRun(who){
 }
 $("mMe").onclick=()=>maiaRun("me");
 $("mOpp").onclick=()=>maiaRun("opp");
+
+
+$("kifu").addEventListener("input",()=>{kifuDirty=true});
+$("sfGo").onclick=()=>{sfLoad(true)};
+$("maGo").onclick=()=>{maiaLoad().catch(()=>{})};
+$("cacheClr").onclick=()=>{CACHE.clear();MCACHE.clear();cacheInfo()};
+cacheInfo();
