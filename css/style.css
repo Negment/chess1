@@ -57,3 +57,5 @@ h2{font-size:14px;margin:0 0 6px}
 .tab{display:flex;flex-direction:column;gap:10px}.tab[hidden]{display:none}
 
 .elo{display:flex;flex-direction:column;gap:6px;margin:8px 0}.elo label{display:block}.elo input[type=range]{width:100%;display:block;margin-top:4px}.scale{display:flex;justify-content:space-between;font-size:12px;opacity:.8}
+
+.eloRow{display:flex;gap:8px;align-items:center}.eloRow input[type=range]{flex:1;margin:0}.eloRow input[type=number]{width:84px}
