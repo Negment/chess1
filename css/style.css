@@ -1,10 +1,10 @@
-:root{--bg:#f3f5f8;--fg:#1c2530;--panel:#fff;--line:#c9d2dd;--lt:#e3e9f0;--dk:#7b92ab;--sel:#ffd54a;--accent:#2d5f9a;--me:#1f9d55;--opp:#d6452f;--bs:min(calc(94vw - 34px),560px)}
+:root{--bg:#f3f5f8;--fg:#1c2530;--panel:#fff;--line:#c9d2dd;--lt:#e3e9f0;--dk:#7b92ab;--sel:#ffd54a;--accent:#2d5f9a;--me:#1f9d55;--opp:#d6452f;--bs:min(calc(94vw - 64px),560px)}
 @media(prefers-color-scheme:dark){:root{--bg:#161b22;--fg:#e4e9ef;--panel:#1f262f;--line:#38424f;--lt:#c5d0dc;--dk:#5d748d;--accent:#6aa5e6}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
 h1{font-size:18px;margin:0 0 10px}
 main{display:flex;flex-wrap:wrap;gap:16px;padding:14px;justify-content:center;align-items:flex-start}
-.left{width:calc(var(--bs) + 26px)}
+.left{width:calc(var(--bs) + 52px)}
 #bw{display:grid;grid-template-columns:26px var(--bs)}
 #rk{display:grid;grid-template-rows:repeat(8,minmax(0,1fr));height:var(--bs);padding:2px 0}
 #fl{grid-column:2;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));padding:0 2px}
@@ -59,3 +59,44 @@ h2{font-size:14px;margin:0 0 6px}
 .elo{display:flex;flex-direction:column;gap:6px;margin:8px 0}.elo label{display:block}.elo input[type=range]{width:100%;display:block;margin-top:4px}.scale{display:flex;justify-content:space-between;font-size:12px;opacity:.8}
 
 .eloRow{display:flex;gap:8px;align-items:center}.eloRow input[type=range]{flex:1;margin:0}.eloRow input[type=number]{width:84px}
+
+.ev{display:grid;grid-template-columns:7.5em 1fr 4.2em;gap:6px;align-items:center;margin:3px 0}
+.ev b{text-align:right;font-variant-numeric:tabular-nums}.ev span:first-child b{text-align:left}
+.evbar{position:relative;height:10px;background:var(--bg);border:1px solid var(--line);border-radius:5px}
+.evbar::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--dk)}
+.evbar i{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:4px}.evbar i.neg{background:#d6452f}
+.wbar{height:12px;border-radius:6px;overflow:hidden;display:flex;border:1px solid var(--line);margin:6px 0}
+.wbar i{display:block;background:#f4f4f4}.wbar u{display:block;flex:1;background:#222}
+.gi{cursor:pointer}
+
+/* 盤面の座標(四辺)と昇格の選択 */
+#bw{position:relative;grid-template-columns:26px var(--bs) 26px;grid-template-rows:24px var(--bs) 24px}
+#ft,#fl{grid-column:2;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));padding:0 2px}
+#ft{grid-row:1}#fl{grid-row:3}
+#rk,#rr{grid-row:2;display:grid;grid-template-rows:repeat(8,minmax(0,1fr));height:var(--bs);padding:2px 0}
+#rk{grid-column:1}#rr{grid-column:3}
+#bd{grid-column:2;grid-row:2}
+#ft div,#fl div{height:24px}
+#ft div,#rr div{display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px}
+#pp{position:absolute;left:26px;top:24px;width:var(--bs);height:var(--bs);display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);z-index:6}
+#pp[hidden]{display:none}
+#pp .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+#pp .row{justify-content:center}
+#pp .pcb{font-size:34px;line-height:1;padding:4px 10px}
+#pp .pcb.w{color:#fff;text-shadow:0 0 2px #000,0 0 2px #000}#pp .pcb.k{color:#111}
+/* 文章量でレイアウトが崩れないようにする */
+html{overflow-x:hidden}
+.right{min-width:0}.card{min-width:0;overflow-wrap:anywhere}
+.tabs{overflow-x:auto}.tabs button{flex:1 0 auto;min-width:4.2em;white-space:nowrap}
+button{white-space:nowrap}
+select,input,textarea{max-width:100%}
+#st{min-height:3.4em}
+#res,#mres,#hres,#gaList,#hl{overflow-wrap:anywhere}
+#res,#mres,#hres,#gaList{max-height:46vh;overflow:auto}
+#kfOut,#kfIn{height:140px}
+
+.tag.s1{background:#1f9d55}.tag.s2{background:#b9791a}.tag.s3{background:#7b8794}
+
+.tag.cl-best{background:#1f9d55}.tag.cl-good{background:#3b8fd6}.tag.cl-dub{background:#a08a10}.tag.cl-bad{background:#d9822b}.tag.cl-blun{background:#c0392b}.tag.cl-forced{background:#7b8794}
+.chip{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:10px;padding:0 6px;margin:1px 2px}
+.chip.rs{border-color:var(--accent);color:var(--accent)}
