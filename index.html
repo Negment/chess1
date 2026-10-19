@@ -11,7 +11,7 @@
 <main>
 <div class="left">
   <h1>チェス盤面アナライザ</h1>
-  <div id="bw"><div id="rk"></div><div id="bd"></div><div id="fl"></div></div>
+  <div id="bw"><div id="ft"></div><div id="rk"></div><div id="bd"></div><div id="rr"></div><div id="fl"></div><div id="pp" hidden></div></div>
   <div id="st"></div>
   <div id="msg"></div>
 </div>
@@ -23,21 +23,7 @@
     </div>
     <div class="row" style="margin-top:8px">
       <button id="mPlay" class="on">対局(クリックで動かす)</button><button id="mEdit">配置</button>
-      <label class="sub">昇格先 <select id="promo"><option value="q">クイーン</option><option value="r">ルーク</option><option value="b">ビショップ</option><option value="n">ナイト</option></select></label>
-    </div>
-  </div>
-
-  <div class="card" id="editBox" hidden>
-    <h2>配置モード:駒を選んでマスをクリック(同じ駒をもう一度置くと消えます)</h2>
-    <div class="pal" id="pal"></div>
-    <div class="row" style="margin-top:8px">
-      <button id="clr">全消去</button><button id="ini">初期配置</button>
-      <label class="sub">キャスリング権:
-        <label><input type="checkbox" class="cr" value="K">白K</label>
-        <label><input type="checkbox" class="cr" value="Q">白Q</label>
-        <label><input type="checkbox" class="cr" value="k">黒k</label>
-        <label><input type="checkbox" class="cr" value="q">黒q</label>
-      </label>
+      <label class="sub">昇格先 <select id="promo"><option value="ask">毎回聞く</option><option value="q">クイーン</option><option value="r">ルーク</option><option value="b">ビショップ</option><option value="n">ナイト</option></select></label>
     </div>
   </div>
 
@@ -46,8 +32,13 @@
     <div class="row"><input type="text" id="mv" placeholder="例: Nc3" autocomplete="off" autocapitalize="off"><button id="mvGo" class="go">指す</button></div>
   </div>
 
-  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="kf">棋譜・盤面</button><button data-t="set">設定</button></div>
+  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="rv">復習</button><button data-t="kf">棋譜</button><button data-t="ed">配置</button><button data-t="set">設定</button></div>
   <div class="tab" data-t="ana">
+  <div class="card">
+    <h2>形勢評価(自作の目安)</h2>
+    <div id="evalBox"></div>
+  </div>
+
   <div class="card">
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
@@ -67,6 +58,7 @@
       <button id="mMe">自分が指しそうな手</button><button id="mOpp">相手が指しそうな手</button>
       <label class="sub">候補数 <select id="mN"><option value="3">3</option><option value="5" selected>5</option></select></label>
     </div>
+    <div class="row"><label class="sub"><input type="checkbox" id="maHist">棋譜の履歴をMaiaに渡す(直近8局面・別の分岐は無視)</label></div>
     <div class="elo">
       <div class="sub">自分のレート</div>
       <div class="eloRow"><input type="range" id="eloMeR" min="0" max="5000" step="50" value="1500"><input type="number" id="eloMe" min="0" max="5000" step="1" value="1500" inputmode="numeric"></div>
@@ -78,18 +70,45 @@
     <div id="mres"></div>
     <div class="sub">確率は「そのレートの人間がこの手を選ぶ割合」の予想で、強さの評価ではありません。</div>
   </div>
+
+  <div class="card">
+    <h2>対人で有利な手を探す(独自)</h2>
+    <div class="row"><button id="huGo" class="go">探す</button></div>
+    <div id="hres"></div>
+    <div class="sub">Stockfish の候補手それぞれについて、Maia が「その相手レートの人間がどう応じるか」を予想し、期待勝率の高い順に並べます。レートは、上のMaiaの欄の値を使います。</div>
+  </div>
+  </div>
+  <div class="tab" data-t="rv" hidden>
+  <div class="card">
+    <h2>棋譜の再生</h2>
+    <div class="row"><button id="rpFirst">⏮ 最初</button><button id="rpPlay">▶ 再生</button><button id="rpLast">最後 ⏭</button>
+      <label class="sub">間隔 <select id="rpSpeed"><option value="500">0.5秒</option><option value="1000" selected>1秒</option><option value="2000">2秒</option><option value="4000">4秒</option></select></label></div>
+    <div class="sub">棋譜は「棋譜・盤面」タブに貼り付けて読み込めます。</div>
+  </div>
+
+  <div id="reviewMount"></div>
   </div>
   <div class="tab" data-t="kf" hidden>
-  <div class="card">
-    <h2>棋譜(コピー・貼り付け用)</h2>
-    <textarea id="kifu" spellcheck="false"></textarea>
-    <div class="row"><button id="kCopy">コピー</button><button id="kLoad">この棋譜で盤面を作り直す</button></div>
-    <div class="sub">貼り付けた棋譜は、[FEN "..."] の見出しがあればその局面から、なければ初期配置から読み込みます。</div>
-  </div>
+  <div id="kifuMount"></div>
 
   <div class="card">
     <h2>履歴(クリックでその局面へ)</h2>
     <div id="hl"></div>
+  </div>
+  </div>
+  <div class="tab" data-t="ed" hidden>
+  <div class="card" id="editBox">
+    <h2>配置モード:駒を選んでマスをクリック(同じ駒をもう一度置くと消えます)</h2>
+    <div class="pal" id="pal"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="clr">全消去</button><button id="ini">初期配置</button>
+      <label class="sub">キャスリング権:
+        <label><input type="checkbox" class="cr" value="K">白K</label>
+        <label><input type="checkbox" class="cr" value="Q">白Q</label>
+        <label><input type="checkbox" class="cr" value="k">黒k</label>
+        <label><input type="checkbox" class="cr" value="q">黒q</label>
+      </label>
+    </div>
   </div>
 
   <div class="card">
@@ -119,6 +138,11 @@
     </div>
     <div class="sub">オフにした判定は、状態欄にも盤面にも出しません。最善手を計算するエンジン側のルールは変わりません。</div>
   </div>
+
+  <div class="card">
+    <h2>ライセンス</h2>
+    <div class="sub">使っているソフトウェアと、そのライセンスは、リポジトリの THIRD_PARTY_NOTICES.md に書いてあります。</div>
+  </div>
   </div>
 </div>
 </main>
@@ -126,5 +150,7 @@
 <script src="js/chess.js"></script>
 <script src="js/engines.js"></script>
 <script src="js/app.js"></script>
+<script src="js/review.js"></script>
+<script src="js/kifu.js"></script>
 </body>
 </html>
