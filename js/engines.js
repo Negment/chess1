@@ -67,8 +67,12 @@ async function sfInit(){
     sfNone=true;setSt("sfSt","起動できませんでした(自作エンジンで代替)");return null;
   }finally{clearInterval(tick)}
 }
-function sfBest(w,s,am,all,t,N){
+const ABORT=new Error("aborted");
+let sfJob=null;
+function engineAbort(kind){if(sfJob&&sf&&sfJob.kind===kind){sfJob.abort=true;sf.postMessage("stop")}}
+function sfBest(w,s,am,all,t,N,kind="ui"){
   return new Promise(res=>{
+    const job={kind,abort:false};sfJob=job;
     const L={},to=setTimeout(()=>w.postMessage("stop"),t+5000);
     w.onmessage=e=>{
       const l=String(e.data);
@@ -76,18 +80,24 @@ function sfBest(w,s,am,all,t,N){
         const i=+((l.match(/multipv (\d+)/)||[0,1])[1]),d=l.match(/ depth (\d+)/),c=l.match(/score cp (-?\d+)/),m=l.match(/score mate (-?\d+)/),p=l.match(/ pv (\S+)/);
         L[i]={dep:d?+d[1]:0,sc:c?{cp:+c[1]}:m?{mate:+m[1]}:null,u:p[1]};
       }
-      if(l.startsWith("bestmove")){clearTimeout(to);res(Object.keys(L).sort((a,b)=>a-b).map(k=>({...L[k],m:am.find(x=>uci(x)===L[k].u)})).filter(x=>x.m))}
+      if(l.startsWith("bestmove")){
+        clearTimeout(to);
+        const out=Object.keys(L).sort((a,b)=>a-b).map(k=>({...L[k],m:am.find(x=>uci(x)===L[k].u)})).filter(x=>x.m);
+        out.aborted=job.abort;if(sfJob===job)sfJob=null;res(out);
+      }
     };
     w.postMessage("setoption name MultiPV value "+Math.min(N,am.length));
     w.postMessage("position fen "+toFen(s));
     w.postMessage("go movetime "+t+(am.length<all.length?" searchmoves "+am.map(uci).join(" "):""));
   });
 }
-const sfTxt=sc=>!sc?"":sc.mate!=null?(sc.mate>0?`${sc.mate}手で詰み`:`${-sc.mate}手で詰まされる`):scoreText(sc.cp);
+const sfTxt=sc=>!sc?"":sc.mate!=null?(sc.mate>0?`${sc.mate}手で詰み(探索で証明済み)`:`${-sc.mate}手で詰まされる(探索で証明済み)`):scoreText(sc.cp);
 const CACHE=new Map(),MCACHE=new Map();
 const cacheInfo=()=>setSt("cacheN","保存した計算結果: "+(CACHE.size+MCACHE.size)+"件");
-const sfRes=(L,f,note)=>({m:L[0].m,src:"sf",text:`${f} / 深さ${L[0].dep}手 / ${sfTxt(L[0].sc)}${note?" / "+note:""}`,
-  alts:L.slice(1).map(x=>({m:x.m,text:`深さ${x.dep}手 / ${sfTxt(x.sc)}${x.add?" / 追加計算":""}`}))});
+const cpOf=x=>!x?null:x.mate!=null?(x.mate>0?3000:-3000):Math.max(-3000,Math.min(3000,x.cp));
+const proofOf=x=>x&&x.mate!=null?(x.mate>0?"勝ちが確定(詰みを探索で証明済み)":"負けが確定(詰まされることを探索で証明済み)"):"";
+const sfRes=(L,f,note)=>({m:L[0].m,src:"sf",cp:cpOf(L[0].sc),proof:proofOf(L[0].sc),text:`${f} / 深さ${L[0].dep}手 / ${sfTxt(L[0].sc)}${note?" / "+note:""}`,
+  alts:L.slice(1).map(x=>({m:x.m,cp:cpOf(x.sc),text:`深さ${x.dep}手 / ${sfTxt(x.sc)}${x.add?" / 追加計算":""}`}))});
 function keep(key,N,t,r,extra){CACHE.set(key,{N,t,res:{...r,alts:r.alts?r.alts.slice():undefined},...extra});cacheInfo();return r}
 function view(c,N){
   const tag=" ／ 保存済みの結果を再利用";
@@ -112,6 +122,7 @@ async function best(s){
       const known=new Set(c.lines.map(x=>uci(x.m))),rest=am.filter(m=>!known.has(uci(m)));
       if(!rest.length){c.N=99;return view(c,N)}
       const need=N-c.lines.length,L=await sfBest(sf,s,rest,ms,t,need);
+      if(L.aborted)throw ABORT;
       const lines=c.lines.concat(L.map(x=>({...x,add:true})));
       return keep(key,L.length<need?99:N,t,sfRes(lines,c.fname,c.note),{lines,fname:c.fname,note:c.note});
     }
@@ -124,12 +135,14 @@ async function best(s){
     const w=await sfLoad();
     if(w){
       const L=await sfBest(w,s,am,ms,t,N);
+      if(L.aborted)throw ABORT;
       if(L.length)return keep(key,L.length<N?99:N,t,sfRes(L,w.fname,note),{lines:L,fname:w.fname,note});
     }else note=(note?note+" / ":"")+"Stockfishを読み込めないため自作エンジンに切替";
   }
   await new Promise(r=>setTimeout(r,30));
+  SEARCH_HIST=histKeys();
   const r=search(s,am,t,8);
-  return keep(key,N,t,{m:r.m,src:"se",text:`深さ${r.depth}手 / ${scoreText(r.score)}${note?" / "+note:""}`});
+  return keep(key,N,t,{m:r.m,src:"se",cp:Math.max(-3000,Math.min(3000,r.score)),text:`深さ${r.depth}手 / ${scoreText(r.score)}${note?" / "+note:""}`});
 }
 
 /* ---------- Maia(人間らしい手) ---------- */
@@ -165,12 +178,80 @@ function maiaLoad(prog){
   })().finally(()=>{maP=null});
   return maP;
 }
-async function maiaPredict(s,selfElo,oppoElo,N,prog){
-  const key=rkey(s)+"|"+selfElo+"|"+oppoElo+"|"+MAIA_CFG.variant,c=MCACHE.get(key);
-  if(c)return c.list.slice(0,N);
+async function maiaPredict(s,selfElo,oppoElo,N,prog,prior){
+  const key=rkey(s)+"|"+selfElo+"|"+oppoElo+"|"+MAIA_CFG.variant+"|"+(prior?prior.join(">"):""),c=MCACHE.get(key);
+  if(c)return Object.assign(c.list.slice(0,N),{all:c.list.all,wp:c.list.wp});
   const m=await maiaLoad(prog),mv=legal(s);
-  const r=await m.predict({fen:toFen(s),selfElo,oppoElo,topK:5});
+  const r=await m.predict({fen:toFen(s),selfElo,oppoElo,topK:5,...(prior&&prior.length?{priorFens:prior}:{})});
   const list=r.candidates.map(x=>({m:mv.find(y=>uci(y)===x.uci),p:x.probability,win:x.winProbability})).filter(x=>x.m).slice(0,5);
+  list.all=r.moves;list.wp=r.winProbability;
   MCACHE.set(key,{list});cacheInfo();
-  return list.slice(0,N);
+  return Object.assign(list.slice(0,N),{all:list.all,wp:list.wp});
+}
+
+/* ---------- 1局面の評価(棋譜の解析用) ---------- */
+async function evalPos(s,t){
+  const ms=legal(s);
+  if(!ms.length)return{cp:inCheck(s,s.t==="w")?-3000:0,m:null,cp2:null,n:0};
+  if($("useSF").checked){
+    const w=await sfLoad();
+    if(w){const L=await sfBest(w,s,ms,ms,t,2,"ga");if(L.length)return{cp:cpOf(L[0].sc)??0,m:L[0].m,cp2:L[1]?cpOf(L[1].sc):null,n:ms.length}}
+  }
+  await new Promise(r=>setTimeout(r,0));
+  SEARCH_HIST=new Set();
+  const r=search(s,ms,t,8);
+  return{cp:Math.max(-3000,Math.min(3000,r.score)),m:r.m,cp2:null,n:ms.length};
+}
+
+function histKeys(){
+  const z=new Set(),s=hist[pos].s;
+  for(let i=Math.max(0,pos-s.h);i<pos;i++)z.add(keyOf(hist[i].s));
+  return z;
+}
+// Maia に渡す履歴: 今の局面までの直列の履歴だけ(古い順・最大8局面)。取り消し後に指し直した場合は、指し直した手順だけになる。
+// 配置の編集や読み込みで履歴が途切れた所より前は渡さない(別の試合として扱う)
+function lineBase(i){for(let k=i;k>0;k--)if(!hist[k].mv)return k;return 0}
+function priorFensAt(i,after){
+  if(!$("maHist")||!$("maHist").checked)return null;
+  const b=lineBase(i),from=after?i-7:i-8,to=after?i:i-1,L=[];
+  for(let k=Math.max(b,from);k<=to;k++)L.push(toFen(hist[k].s));
+  return L.length?L:null;
+}
+const priorFens=kind=>priorFensAt(pos,kind==="after");
+
+/* ---------- 確定情報(この答えが確定しているか) ---------- */
+const TBCAP=new Map();
+async function tbProbe(s){
+  const ac=new AbortController(),t=setTimeout(()=>ac.abort(),5000);
+  try{
+    const r=await fetch("https://tablebase.lichess.ovh/standard?fen="+encodeURIComponent(toFen({...s,c:""})),{signal:ac.signal});
+    if(!r.ok)return null;
+    return (await r.json()).category||null;
+  }catch(x){return null}finally{clearTimeout(t)}
+}
+async function confirmInfo(s,r){
+  if(r.src==="tb")return{level:"確定",text:"テーブルベースの答えです(勝敗と最善手が確定しています)"};
+  if(r.proof)return{level:"確定",text:r.proof};
+  const ms=legal(s);
+  if(ms.length===1)return{level:"確定",text:"合法手が1つだけです"};
+  const n=s.b.filter(Boolean).length;
+  if(n===8&&!s.c&&$("useTB").checked){
+    const key=rkey(s)+"|cap";let info=TBCAP.get(key);
+    if(!info){
+      info=[];
+      const caps=ms.filter(m=>s.b[m.t]||(s.b[m.f].toUpperCase()==="P"&&m.t===s.e)).slice(0,12);
+      for(const m of caps){
+        const ns=make(s,m);
+        if(ns.b.filter(Boolean).length!==7||ns.c)continue;
+        const c=await tbProbe(ns);
+        if(c){const mc=INV[c]||c;info.push({san:san(s,m),res:CAT[mc]||mc,win:mc==="win"})}
+      }
+      TBCAP.set(key,info);
+    }
+    if(info.length){
+      const w=info.some(x=>x.win);
+      return{level:"一部確定",text:`取って7駒になる手は、テーブルベースで確定しています: ${info.map(x=>x.san+"="+x.res).join(" / ")}${w?"。勝ちが確定している手があります":""}。取らない手の評価は確定ではありません`};
+    }
+  }
+  return{level:"未確定",text:"探索による推定です(確定ではありません)"};
 }
