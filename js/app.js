@@ -1,7 +1,7 @@
 "use strict";
 /* ---------- 状態・履歴 ---------- */
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
-let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null;
+let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,draft=null;
 const S=()=>hist[pos].s;
 function validate(s){
   const wk=s.b.filter(p=>p==="K").length,bk=s.b.filter(p=>p==="k").length;
@@ -17,7 +17,7 @@ function prior(ns){return ns.h===0?0:cnt(ns)}
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
-function reset(){engineAbort("ui");sel=null;results=[];mres=null;token++;render()}
+function reset(){engineAbort("ui");draft=null;sel=null;results=[];mres=null;token++;render()}
 function doMove(m){
   const s=S();
   const lb=`${s.n}${s.t==="w"?".":"…"}${san(s,m)}`;
@@ -32,10 +32,12 @@ function insuf(s){
   return ps.every(x=>x[0]==="b"&&x[1]===ps[0][1]);
 }
 function render(){
-  const s=S(),err=validate(s);
+  const real=S();
+  if(mode==="edit"&&!draft)draft={...real,b:real.b.slice()};
+  const s=mode==="edit"?draft:real,err=validate(s);
   const ms=mode==="play"&&!err?legal(s):[];
   const tg=new Set(sel!==null?ms.filter(m=>m.f===sel).map(m=>m.t):[]);
-  const lm=hist[pos].mv,ck=!err&&inCheck(s,s.t==="w")?s.b.indexOf(s.t==="w"?"K":"k"):-1;
+  const lm=mode==="edit"?null:hist[pos].mv,ck=mode==="play"&&!err&&inCheck(s,s.t==="w")?s.b.indexOf(s.t==="w"?"K":"k"):-1;
   let h="";
   for(let dr=0;dr<8;dr++)for(let dc=0;dc<8;dc++){
     const q=flipped?(7-dr)*8+(7-dc):dr*8+dc,p=s.b[q];
@@ -48,13 +50,13 @@ function render(){
       +(p?`<span class="pc ${isW(p)?"w":"k"}">${glyph(p)}</span>`:"")+"</div>";
   }
   let ov="";
-  if(!err&&!legal(s).length)ov=inCheck(s,s.t==="w")?`<div class="ov mate">チェックメイト<br><small>${s.t==="w"?"黒":"白"}の勝ち</small></div>`:$("jStale").checked?'<div class="ov stale">ステイルメイト<br><small>引き分け</small></div>':"";
-  if(!ov&&!err&&$("jInsuf").checked&&insuf(s))ov='<div class="ov stale">引き分け<br><small>駒が足りません(チェックメイト不可)</small></div>';
+  if(mode==="play"&&!err&&!legal(s).length)ov=inCheck(s,s.t==="w")?`<div class="ov mate">チェックメイト<br><small>${s.t==="w"?"黒":"白"}の勝ち</small></div>`:$("jStale").checked?'<div class="ov stale">ステイルメイト<br><small>引き分け</small></div>':"";
+  if(mode==="play"&&!ov&&!err&&$("jInsuf").checked&&insuf(s))ov='<div class="ov stale">引き分け<br><small>駒が足りません(チェックメイト不可)</small></div>';
   $("bd").innerHTML=h+'<svg id="ar" viewBox="0 0 8 8"></svg>'+ov;
   $("rk").innerHTML=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
   const fls=[...F].map((x,i)=>`<div>${flipped?F[7-i]:x}</div>`).join(""),rks=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
   $("fl").innerHTML=fls;$("ft").innerHTML=fls;$("rr").innerHTML=rks;
-  drawArrows();
+  if(mode==="play")drawArrows();
   let st=`手番:${s.t==="w"?"白":"黒"}`;
   if(err)st+=" ／ "+err;
   else{
@@ -65,12 +67,12 @@ function render(){
     if($("jFifty").checked&&s.h>=100)st+=" ／ 50手ルール(引き分け請求可)";
     const rc=$("jRep").checked?cnt(s):0;if(rc>=3)st+=" ／ 同一局面3回(引き分け請求可)";else if(rc===2)st+=" ／ 同一局面2回目";
   }
+  if(mode==="edit")st="配置中(未確定) ／ 手番:"+(s.t==="w"?"白":"黒")+(err?" ／ "+err:"")+(toFen(draft)!==toFen(real)?" ／ 変更あり。「確定」で盤面に反映します":"");
   $("st").textContent=st;
-  $("st").className=err?"":!legal(s).length?(inCheck(s,s.t==="w")?"mate":$("jStale").checked?"stale":""):inCheck(s,s.t==="w")?"ck":$("jInsuf").checked&&insuf(s)?"stale":"";
+  $("st").className=mode==="edit"||err?"":!legal(s).length?(inCheck(s,s.t==="w")?"mate":$("jStale").checked?"stale":""):inCheck(s,s.t==="w")?"ck":$("jInsuf").checked&&insuf(s)?"stale":"";
   $("fen").value=toFen(s);
   if(typeof renderKifu==="function")renderKifu();
   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
-  $("mPlay").classList.toggle("on",mode==="play");$("mEdit").classList.toggle("on",mode==="edit");
   document.querySelectorAll(".cr").forEach(x=>x.checked=s.c.includes(x.value));
   $("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
   renderRes();renderMaia();if(typeof renderReview==="function")renderReview();
@@ -120,8 +122,8 @@ $("bd").addEventListener("click",e=>{
   const q=e.target.closest("[data-q]");if(!q)return;
   const sq=+q.dataset.q,s=S();
   if(mode==="edit"){
-    const b=s.b.slice();b[sq]=pal==="x"?"":(b[sq]===pal?"":pal);
-    commit(norm({...s,b,e:-1}),"配置");return;
+    const b=draft.b.slice();b[sq]=pal==="x"?"":(b[sq]===pal?"":pal);
+    draft=norm({...draft,b,e:-1});render();return;
   }
   const err=validate(s);if(err){msg(err);return}
   msg("");
@@ -147,14 +149,20 @@ document.addEventListener("keydown",e=>{
   if(e.key==="y"){e.preventDefault();$("redo").click()}
 });
 $("flip").onclick=()=>{flipped=!flipped;render()};
-$("turn").onclick=()=>{const s=S();commit({...s,t:s.t==="w"?"b":"w",e:-1},"手番交代")};
-$("mPlay").onclick=()=>{mode="play";sel=null;render()};
-$("mEdit").onclick=()=>{mode="edit";sel=null;render();showTab("ed")};
-$("clr").onclick=()=>commit({b:Array(64).fill(""),t:"w",c:"",e:-1,h:0,n:1},"全消去");
-$("ini").onclick=()=>commit(parseFen(START),"初期配置");
+$("turn").onclick=()=>{if(mode!=="edit")return;draft={...draft,t:draft.t==="w"?"b":"w",e:-1};render()};
+$("clr").onclick=()=>{if(mode!=="edit")return;draft={b:Array(64).fill(""),t:draft.t,c:"",e:-1,h:0,n:1};render()};
+$("ini").onclick=()=>{if(mode!=="edit")return;draft=parseFen(START);render()};
+$("edNo").onclick=()=>{draft=null;msg("");render()};
+$("edOk").onclick=()=>{
+  if(mode!=="edit"||!draft)return;
+  const d=norm({...draft,e:-1,h:0}),pr=fenProblems(d);
+  if(pr){msg("確定できません: "+pr);return}
+  commit(d,"配置");msg("配置を確定しました");
+};
 document.querySelectorAll(".cr").forEach(x=>x.onchange=()=>{
-  const s=S(),c=[...document.querySelectorAll(".cr")].filter(i=>i.checked).map(i=>i.value).join("");
-  commit(norm({...s,c}),"キャスリング権");
+  if(mode!=="edit"){render();return}
+  const c=[...document.querySelectorAll(".cr")].filter(i=>i.checked).map(i=>i.value).join("");
+  draft=norm({...draft,c});render();
 });
 $("fenLoad").onclick=()=>{
   try{commit(parseFen($("fen").value),"FEN読込");msg("")}catch(e){msg(e.message)}
@@ -164,6 +172,7 @@ $("fenCopy").onclick=async()=>{
   catch(e){$("fen").select();document.execCommand("copy")}
 };
 function inputMoves(){
+  if(mode==="edit"){msg("配置の編集中です。別のタブに切り替えると、指せます");return}
   const toks=$("mv").value.replace(/\d+\s*\.+/g,"").replace(/\{[^}]*\}/g,"").split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
   if(!toks.length)return;
   let err=validate(S());if(err){msg(err);return}
@@ -253,6 +262,8 @@ cacheInfo();
 function showTab(t){
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.t===t));
   document.querySelectorAll(".tab").forEach(x=>{x.hidden=x.dataset.t!==t});
+  const m=t==="ed"?"edit":"play";   // 配置タブを開いている間だけ配置モード。他のタブでは通常の対局操作
+  if(m!==mode){mode=m;sel=null;msg("");render()}
 }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.t));
 function showPromo(pm){
