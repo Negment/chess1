@@ -17,11 +17,52 @@ function norm(s){
   if(b[4]==="k"&&b[0]==="r"&&s.c.includes("q"))c+="q";
   return {...s,c};
 }
+function fenProblems(s){
+  const b=s.b,cnt={};
+  for(const p of b)if(p)cnt[p]=(cnt[p]||0)+1;
+  const n=x=>cnt[x]||0;
+  if(n("K")!==1||n("k")!==1)return "キングは白黒1枚ずつ必要です";
+  for(const[nm,L]of[["白","PNBRQ"],["黒","pnbrq"]]){
+    const tot=[...L].reduce((a,x)=>a+n(x),0)+1;
+    if(tot>16)return nm+"の駒が16枚を超えています";
+    if(n(L[0])>8)return nm+"のポーンが8枚を超えています";
+    const ex=[[1,2],[2,2],[3,2],[4,1]].reduce((a,[i,base])=>a+Math.max(0,n(L[i])-base),0);
+    if(n(L[0])+ex>8)return nm+"の駒の数が、昇格を考えても合いません";
+  }
+  const wk=b.indexOf("K"),bk=b.indexOf("k");
+  if(Math.abs((wk>>3)-(bk>>3))<=1&&Math.abs((wk&7)-(bk&7))<=1)return "キング同士が隣り合っています";
+  for(let i=0;i<8;i++)if(/[Pp]/.test(b[i]+b[56+i]))return "ポーンが1段目・8段目にあります";
+  if(inCheck(s,s.t!=="w"))return "手番でない側のキングがチェックされています";
+  if(s.e>=0){
+    const w=s.t==="w";
+    if((s.e>>3)!==(w?2:5))return "アンパッサンのマスの段が不正です";
+    if(b[s.e]||b[s.e+(w?-8:8)])return "アンパッサンのマスが空いていません";
+    if(b[s.e+(w?8:-8)]!==(w?"p":"P"))return "アンパッサンのマスの手前に、取られるポーンがありません";
+  }
+  if(!(s.h>=0)||!(s.n>=1))return "手数の値が不正です";
+  return "";
+}
 function parseFen(f){
   const p=f.trim().split(/\s+/),b=[];
-  for(const ch of p[0]){if(ch==="/")continue;if(/[1-8]/.test(ch)){for(let i=0;i<+ch;i++)b.push("")}else if(/[KQRBNPkqrbnp]/.test(ch))b.push(ch);else throw new Error("FENに不正な文字があります: "+ch)}
-  if(b.length!==64)throw new Error("FENの盤面が64マスになっていません");
-  return norm({b,t:p[1]==="b"?"b":"w",c:p[2]&&p[2]!=="-"?p[2]:"",e:p[3]&&p[3]!=="-"?nameSq(p[3]):-1,h:+p[4]||0,n:+p[5]||1});
+  if(p.length<2||p.length>6)throw new Error("FENの項目数が合いません(盤面・手番・キャスリング・アンパッサン・半手数・手数)");
+  const rows=p[0].split("/");
+  if(rows.length!==8)throw new Error("FENの盤面が8段になっていません");
+  for(const row of rows){
+    let n=0;
+    for(const ch of row){
+      if(/[1-8]/.test(ch)){for(let i=0;i<+ch;i++)b.push("");n+=+ch}
+      else if(/[KQRBNPkqrbnp]/.test(ch)){b.push(ch);n++}
+      else throw new Error("FENに使えない文字「"+ch+"」があります");
+    }
+    if(n!==8)throw new Error("FENの1段が8マスになっていません: "+row);
+  }
+  if(!/^[wb]$/.test(p[1]))throw new Error("FENの手番は w か b です");
+  if(p[2]&&!/^(-|[KQkq]{1,4})$/.test(p[2]))throw new Error("FENのキャスリング欄が不正です");
+  if(p[3]&&!/^(-|[a-h][36])$/.test(p[3]))throw new Error("FENのアンパッサン欄が不正です");
+  if((p[4]&&!/^\d+$/.test(p[4]))||(p[5]&&!/^[1-9]\d*$/.test(p[5])))throw new Error("FENの手数欄が不正です");
+  const s=norm({b,t:p[1],c:p[2]&&p[2]!=="-"?p[2]:"",e:p[3]&&p[3]!=="-"?nameSq(p[3]):-1,h:+p[4]||0,n:+p[5]||1});
+  const pr=fenProblems(s);if(pr)throw new Error("FENが不正です: "+pr);
+  return s;
 }
 function toFen(s){
   let o="";
@@ -170,11 +211,21 @@ function order(s,ms,first){
   };
   return ms.map(m=>[sc(m),m]).sort((a,b)=>b[0]-a[0]).map(x=>x[1]);
 }
-function qs(s,a,b){
-  chk();
+const keyOf=s=>s.b.map(p=>p||".").join("")+s.t+s.c;
+let SEARCH_HIST=new Set(),PATHK=[];
+function qs(s,a,b,ply){
+  chk();ply=ply||0;
+  const ic=inCheck(s,s.t==="w");
+  if(ic&&ply<30){
+    const ms=legal(s);if(!ms.length)return -(MATE-ply);
+    for(const m of order(s,ms)){const sc=-qs(make(s,m),-b,-a,ply+1);if(sc>=b)return sc;if(sc>a)a=sc}
+    return a;
+  }
   const st=ev(s);if(st>=b)return st;if(st>a)a=st;
-  for(const m of order(s,legal(s,true))){
-    const sc=-qs(make(s,m),-b,-a);
+  const cs=legal(s,true);
+  if(!cs.length&&!ic){let n=0;for(const p of s.b)if(p)n++;if(n<=8&&!legal(s).length)return 0}
+  for(const m of order(s,cs)){
+    const sc=-qs(make(s,m),-b,-a,ply+1);
     if(sc>=b)return sc;if(sc>a)a=sc;
   }
   return a;
@@ -182,18 +233,23 @@ function qs(s,a,b){
 function nm(s,d,a,b,ply){
   chk();
   if(s.h>=100)return 0;
+  let rk=null;
+  if(s.h>=4){rk=keyOf(s);if(SEARCH_HIST.has(rk)||PATHK.includes(rk))return 0}
   const w=s.t==="w",ic=inCheck(s,w);
-  if((d<=0&&!ic)||ply>16)return qs(s,a,b);
+  if((d<=0&&!ic)||ply>16)return qs(s,a,b,ply);
   const ms=legal(s);
   if(!ms.length)return ic?-(MATE-ply):0;
-  for(const m of order(s,ms)){
-    const sc=-nm(make(s,m),d-1,-b,-a,ply+1);
-    if(sc>=b)return sc;if(sc>a)a=sc;
-  }
+  PATHK.push(rk);
+  try{
+    for(const m of order(s,ms)){
+      const sc=-nm(make(s,m),d-1,-b,-a,ply+1);
+      if(sc>=b)return sc;if(sc>a)a=sc;
+    }
+  }finally{PATHK.pop()}
   return a;
 }
 function search(s,ms,limit,maxD){
-  nodes=0;tEnd=Date.now()+limit;
+  nodes=0;tEnd=Date.now()+limit;PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
   let best=ms[0],bs=0,depth=0;
   try{
     for(let d=1;d<=maxD;d++){
