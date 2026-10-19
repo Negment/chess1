@@ -1,7 +1,7 @@
 "use strict";
 /* ---------- 状態・履歴 ---------- */
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
-let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,kifuDirty=false;
+let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null;
 const S=()=>hist[pos].s;
 function validate(s){
   const wk=s.b.filter(p=>p==="K").length,bk=s.b.filter(p=>p==="k").length;
@@ -14,19 +14,10 @@ function msg(t){$("msg").textContent=t||""}
 const rkey=s=>toFen(s).split(" ").slice(0,4).join(" ");
 function cnt(s){const k=rkey(s);let c=0;for(let i=Math.max(0,pos-S().h);i<=pos;i++)if(rkey(hist[i].s)===k)c++;return c}
 function prior(ns){return ns.h===0?0:cnt(ns)}
-function kifuText(){
-  let st=0;for(let i=pos;i>0;i--)if(!hist[i].mv){st=i;break}
-  const base=toFen(hist[st].s);let o=base!==toFen(parseFen(START))?`[SetUp "1"]\n[FEN "${base}"]\n\n`:"",first=true;
-  for(let i=st+1;i<=pos;i++){
-    const s=hist[i-1].s,sn=hist[i].label.replace(/^\d+[.…]/,"");
-    o+=(s.t==="w"?`${s.n}. `:first?`${s.n}... `:"")+sn+" ";first=false;
-  }
-  return o.trim();
-}
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
-function reset(){kifuDirty=false;sel=null;results=[];mres=null;token++;render()}
+function reset(){engineAbort("ui");sel=null;results=[];mres=null;token++;render()}
 function doMove(m){
   const s=S();
   const lb=`${s.n}${s.t==="w"?".":"…"}${san(s,m)}`;
@@ -61,7 +52,8 @@ function render(){
   if(!ov&&!err&&$("jInsuf").checked&&insuf(s))ov='<div class="ov stale">引き分け<br><small>駒が足りません(チェックメイト不可)</small></div>';
   $("bd").innerHTML=h+'<svg id="ar" viewBox="0 0 8 8"></svg>'+ov;
   $("rk").innerHTML=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
-  $("fl").innerHTML=[...F].map((x,i)=>`<div>${flipped?F[7-i]:x}</div>`).join("");
+  const fls=[...F].map((x,i)=>`<div>${flipped?F[7-i]:x}</div>`).join(""),rks=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
+  $("fl").innerHTML=fls;$("ft").innerHTML=fls;$("rr").innerHTML=rks;
   drawArrows();
   let st=`手番:${s.t==="w"?"白":"黒"}`;
   if(err)st+=" ／ "+err;
@@ -76,13 +68,12 @@ function render(){
   $("st").textContent=st;
   $("st").className=err?"":!legal(s).length?(inCheck(s,s.t==="w")?"mate":$("jStale").checked?"stale":""):inCheck(s,s.t==="w")?"ck":$("jInsuf").checked&&insuf(s)?"stale":"";
   $("fen").value=toFen(s);
-  if(!kifuDirty)$("kifu").value=kifuText();
+  if(typeof renderKifu==="function")renderKifu();
   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
   $("mPlay").classList.toggle("on",mode==="play");$("mEdit").classList.toggle("on",mode==="edit");
-  $("editBox").hidden=mode!=="edit";
   document.querySelectorAll(".cr").forEach(x=>x.checked=s.c.includes(x.value));
   $("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
-  renderRes();renderMaia();
+  renderRes();renderMaia();if(typeof renderReview==="function")renderReview();
 }
 function drawArrows(){
   const svg=$("ar");if(!svg)return;
@@ -115,6 +106,7 @@ function renderRes(pending){
     if(!r.m){h+=`<div class="res"><b class="${r.w}">${who}</b> <span class="sub">${r.note||"指せる手がありません"}</span></div>`;continue}
     h+=`<div class="res"><b class="${r.w}">${who}</b><span class="san">${r.san}</span>`
       +`<span class="tag ${r.src}">${r.src==="tb"?"確定(テーブルベース)":r.src==="sf"?"予想(Stockfish)":"予想(探索)"}</span><br><small>${r.text}</small>`
+      +(r.sure?`<br><span class="tag s${r.sure.level==="確定"?1:r.sure.level==="一部確定"?2:3}">${r.sure.level}</span> <small>${r.sure.text}</small>`:"")
       +(r.alts||[]).map((a,i)=>`<br><small>${i+2}番手: <b>${a.san}</b> ／ ${a.text}</small>`).join("")
       +(r.w==="me"?` <button data-play="${results.indexOf(r)}">この手を指す</button>`:` <small>※相手が手番ならの手</small>`)+"</div>";
   }
@@ -135,7 +127,11 @@ $("bd").addEventListener("click",e=>{
   msg("");
   if(sel!==null){
     const c=legal(s).filter(m=>m.f===sel&&m.t===sq);
-    if(c.length){doMove(c.find(m=>!m.pr||m.pr===$("promo").value)||c[0]);return}
+    if(c.length){
+      const pm=c.filter(m=>m.pr);
+      if(pm.length&&$("promo").value==="ask"){showPromo(pm);return}
+      doMove(c.find(m=>!m.pr||m.pr===$("promo").value)||c[0]);return;
+    }
   }
   const p=s.b[sq];
   sel=p&&isW(p)===(s.t==="w")?sq:null;
@@ -153,7 +149,7 @@ document.addEventListener("keydown",e=>{
 $("flip").onclick=()=>{flipped=!flipped;render()};
 $("turn").onclick=()=>{const s=S();commit({...s,t:s.t==="w"?"b":"w",e:-1},"手番交代")};
 $("mPlay").onclick=()=>{mode="play";sel=null;render()};
-$("mEdit").onclick=()=>{mode="edit";sel=null;render()};
+$("mEdit").onclick=()=>{mode="edit";sel=null;render();showTab("ed")};
 $("clr").onclick=()=>commit({b:Array(64).fill(""),t:"w",c:"",e:-1,h:0,n:1},"全消去");
 $("ini").onclick=()=>commit(parseFen(START),"初期配置");
 document.querySelectorAll(".cr").forEach(x=>x.onchange=()=>{
@@ -162,20 +158,6 @@ document.querySelectorAll(".cr").forEach(x=>x.onchange=()=>{
 });
 $("fenLoad").onclick=()=>{
   try{commit(parseFen($("fen").value),"FEN読込");msg("")}catch(e){msg(e.message)}
-};
-$("kCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("kifu").value);msg("棋譜をコピーしました")}catch(e){$("kifu").select();document.execCommand("copy")}};
-$("kLoad").onclick=()=>{
-  const tx=$("kifu").value,fm=tx.match(/\[FEN\s+"([^"]+)"\]/);
-  let base;try{base=fm?parseFen(fm[1]):parseFen(START)}catch(e){msg("FENを読み込めません");return}
-  const toks=tx.replace(/\[[^\]]*\]/g,"").replace(/\{[^}]*\}/g,"").replace(/\([^)]*\)/g,"").replace(/\$\d+/g,"").replace(/\d+\s*\.+/g,"").split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
-  if(!confirm("現在の履歴を、この棋譜で置き換えます。よろしいですか?"))return;
-  hist=[{s:base,label:fm?"読込局面":"初期配置"}];pos=0;reset();
-  for(const t of toks){
-    const m=parseTok(S(),t);
-    if(!m){msg(`「${t}」で止まりました(ここまでは読み込み済み)`);render();return}
-    doMove(m);
-  }
-  msg("");render();
 };
 $("fenCopy").onclick=async()=>{
   try{await navigator.clipboard.writeText($("fen").value);msg("")}
@@ -217,8 +199,9 @@ async function analyze(which){
       if(inCheck(s,s.t==="w")){results.push({w,note:"手番側がチェックされているため、相手の手番としては計算できません"});continue}
       st={...s,t:s.t==="w"?"b":"w",e:-1};
     }
-    const r=await best(st);
+    let r;try{r=await best(st)}catch(ex){if(ex===ABORT)return;throw ex}
     if(tk!==token)return;
+    if(r){r.sure=await confirmInfo(st,r);if(tk!==token)return}
     if(r){const pc=prior(make(st,r.m));if(pc)r.text+=` ／ ※この手は同一局面${pc+1}回目になります`}
     results.push(r?{w,...r,san:san(st,r.m),alts:(r.alts||[]).map(a=>({...a,san:san(st,a.m)}))}:{w});
   }
@@ -250,7 +233,7 @@ async function maiaRun(who){
   const tk=++token;
   mres={items:[],note:"計算中…(初回はモデルの読み込みに時間がかかります)"};renderMaia();drawArrows();
   try{
-    const it=await maiaPredict(st,se,oe,+$("mN").value,p=>{if(tk===token){mres.note=p;renderMaia()}});
+    const it=await maiaPredict(st,se,oe,+$("mN").value,p=>{if(tk===token){mres.note=p;renderMaia()}},priorFens(who==="opp"?"after":"me"));
     if(tk!==token)return;
     mres={items:it.map(x=>({...x,san:san(st,x.m)})),note:who==="opp"?"相手が指しそうな手":"自分が指しそうな手"};
   }catch(ex){
@@ -262,16 +245,30 @@ $("mMe").onclick=()=>maiaRun("me");
 $("mOpp").onclick=()=>maiaRun("opp");
 
 
-$("kifu").addEventListener("input",()=>{kifuDirty=true});
 $("sfGo").onclick=()=>{sfProbe().then(()=>sfLoad(true))};
 $("maGo").onclick=()=>{maiaLoad().catch(()=>{})};
 $("cacheClr").onclick=()=>{CACHE.clear();MCACHE.clear();cacheInfo()};
 cacheInfo();
 
-document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));
-  document.querySelectorAll(".tab").forEach(t=>{t.hidden=t.dataset.t!==b.dataset.t});
-});
+function showTab(t){
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.t===t));
+  document.querySelectorAll(".tab").forEach(x=>{x.hidden=x.dataset.t!==t});
+}
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+function showPromo(pm){
+  const w=S().t==="w",pp=$("pp");
+  pp.innerHTML='<div class="box"><div class="sub">昇格する駒を選んでください</div><div class="row">'
+    +"qrbn".split("").map(x=>`<button data-pr="${x}" class="pcb ${w?"w":"k"}">${glyph(w?x.toUpperCase():x)}</button>`).join("")
+    +'</div><button data-pr="">やめる</button></div>';
+  pp.hidden=false;
+  pp.onclick=e=>{
+    const b=e.target.closest("[data-pr]");if(!b)return;
+    pp.hidden=true;
+    const m=pm.find(x=>x.pr===b.dataset.pr);
+    if(m)doMove(m);
+  };
+}
+
 $("sfSel").onchange=sfReset;
 $("maVar").onchange=maiaVariant;
 function eloVal(id){const v=parseInt($(id).value,10);return isNaN(v)?1500:Math.max(0,Math.min(5000,v))}
