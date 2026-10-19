@@ -14,31 +14,24 @@
   <div id="bw"><div id="ft"></div><div id="rk"></div><div id="bd"></div><div id="rr"></div><div id="fl"></div><div id="pp" hidden></div></div>
   <div id="st"></div>
   <div id="msg"></div>
-</div>
-<div class="right">
   <div class="card">
-    <div class="row">
-      <button id="undo">↶ 取り消し</button><button id="redo">↷ やり直し</button>
-      <button id="flip">⟳ 180°回転</button><button id="turn">手番を入れ替え</button>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <button id="mPlay" class="on">対局(クリックで動かす)</button><button id="mEdit">配置</button>
-      <label class="sub">昇格先 <select id="promo"><option value="ask">毎回聞く</option><option value="q">クイーン</option><option value="r">ルーク</option><option value="b">ビショップ</option><option value="n">ナイト</option></select></label>
-    </div>
+    <div class="row"><button id="undo">↶ 取り消し</button><button id="redo">↷ やり直し</button><button id="flip">⟳ 180°回転</button></div>
+    <div class="row" style="margin-top:8px"><label class="sub">昇格先 <select id="promo"><option value="ask">毎回聞く</option><option value="q">クイーン</option><option value="r">ルーク</option><option value="b">ビショップ</option><option value="n">ナイト</option></select></label></div>
   </div>
-
   <div class="card">
     <h2>手の入力(Nc3 / e4 / O-O / e2e4。複数まとめて貼り付け可:1. e4 e5 2. Nf3)</h2>
     <div class="row"><input type="text" id="mv" placeholder="例: Nc3" autocomplete="off" autocapitalize="off"><button id="mvGo" class="go">指す</button></div>
   </div>
-
-  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="rv">復習</button><button data-t="kf">棋譜</button><button data-t="ed">配置</button><button data-t="set">設定</button></div>
-  <div class="tab" data-t="ana">
+</div>
+<div class="right">
+  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="ev">形勢</button><button data-t="rv">復習</button><button data-t="kf">棋譜</button><button data-t="ed">配置</button><button data-t="set">設定</button></div>
+  <div class="tab" data-t="ev" hidden>
   <div class="card">
-    <h2>形勢評価(自作の目安)</h2>
+    <h2>形勢評価</h2>
     <div id="evalBox"></div>
   </div>
-
+  </div>
+  <div class="tab" data-t="ana">
   <div class="card">
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
@@ -98,10 +91,13 @@
   </div>
   <div class="tab" data-t="ed" hidden>
   <div class="card" id="editBox">
-    <h2>配置モード:駒を選んでマスをクリック(同じ駒をもう一度置くと消えます)</h2>
+    <h2>配置(駒を選んでマスをクリック。同じ駒をもう一度置くと消えます)</h2>
     <div class="pal" id="pal"></div>
     <div class="row" style="margin-top:8px">
-      <button id="clr">全消去</button><button id="ini">初期配置</button>
+      <button id="edOk" class="go">確定</button><button id="edNo">変更を破棄</button>
+      <button id="clr">全消去</button><button id="ini">初期配置</button><button id="turn">手番を入れ替え</button>
+    </div>
+    <div class="row">
       <label class="sub">キャスリング権:
         <label><input type="checkbox" class="cr" value="K">白K</label>
         <label><input type="checkbox" class="cr" value="Q">白Q</label>
@@ -109,6 +105,7 @@
         <label><input type="checkbox" class="cr" value="q">黒q</label>
       </label>
     </div>
+    <div class="sub">この画面を開いている間だけ、盤面をクリックして駒を置けます。「確定」を押すまで、実際の局面や履歴は変わりません。他のタブに切り替えると、通常の対局操作に戻ります。</div>
   </div>
 
   <div class="card">
