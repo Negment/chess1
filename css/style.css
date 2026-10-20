@@ -100,3 +100,10 @@ select,input,textarea{max-width:100%}
 .tag.cl-best{background:#1f9d55}.tag.cl-good{background:#3b8fd6}.tag.cl-dub{background:#a08a10}.tag.cl-bad{background:#d9822b}.tag.cl-blun{background:#c0392b}.tag.cl-forced{background:#7b8794}
 .chip{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:10px;padding:0 6px;margin:1px 2px}
 .chip.rs{border-color:var(--accent);color:var(--accent)}
+
+.tag.st{background:#8e44ad}
+.stl{margin:8px 0;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.stl .chip button{padding:0 5px;font-size:12px;border-radius:4px}
+.stsl{display:grid;grid-template-columns:11em 1fr;gap:6px;align-items:center;margin:6px 0}
+.stsl input[type=range]{width:6.5em;vertical-align:middle}
+.stl input[type=range]{width:7em;vertical-align:middle}
