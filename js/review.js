@@ -300,7 +300,7 @@ async function humanRun(){
   out.textContent="候補手を計算中…";
   let r;try{r=await best(s)}catch(e){if(e!==ABORT)out.textContent="最善手の計算に失敗しました";return}
   if(!r){out.textContent="候補がありません";return}
-  const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))];
+  const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))].slice(0,Math.max(1,+$("npv").value));
   const me=eloVal("eloMe"),op=eloVal("eloOpp"),rows=[];
   for(let k=0;k<cands.length;k++){
     out.textContent=`相手の応手を予想中… ${k+1}/${cands.length}(初回はMaiaの読み込みで時間がかかります)`;
