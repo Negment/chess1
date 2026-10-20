@@ -13,7 +13,7 @@ async function tb(s,ms,am,n){
     if(!o.length)return null;
     const tx=x=>CAT[INV[x.c]||x.c]||x.c;
     const ex=o[0].top&&j.dtm!=null?` / 詰みまで約${Math.ceil(Math.abs(j.dtm)/2)}手`:"";
-    return {m:o[0].m,src:"tb",text:(o[0].top?CAT[j.category]||j.category:tx(o[0]))+ex,alts:o.slice(1,n).map(x=>({m:x.m,text:tx(x)}))};
+    return {m:o[0].m,src:"tb",cat:INV[o[0].c]||o[0].c,text:(o[0].top?CAT[j.category]||j.category:tx(o[0]))+ex,alts:o.slice(1,n).map(x=>({m:x.m,cat:INV[x.c]||x.c,text:tx(x)}))};
   }finally{clearTimeout(t)}
 }
 /* ---------- Stockfish(同じフォルダのファイルをWeb Workerで起動) ---------- */
@@ -106,7 +106,7 @@ function view(c,N){
 }
 async function best(s){
   const ms=legal(s);if(!ms.length)return null;
-  const N=+$("npv").value,t=+$("tl").value,rm=$("rep").value,lim=rm==="ban3"?2:1;
+  const N=Math.max(+$("npv").value,typeof styleN==="function"?styleN():0),t=+$("tl").value,rm=$("rep").value,lim=rm==="ban3"?2:1;
   let am=ms,note="";
   if(rm!=="off"){
     const ok=ms.filter(m=>prior(make(s,m))<lim);
