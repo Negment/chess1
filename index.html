@@ -24,7 +24,7 @@
   </div>
 </div>
 <div class="right">
-  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="ev">形勢</button><button data-t="rv">復習</button><button data-t="kf">棋譜</button><button data-t="ed">配置</button><button data-t="set">設定</button></div>
+  <div class="tabs"><button data-t="ana" class="on">解析</button><button data-t="ev">形勢</button><button data-t="rv">復習</button><button data-t="kf">棋譜</button><button data-t="ed">配置</button><button data-t="st">棋風</button><button data-t="set">設定</button></div>
   <div class="tab" data-t="ev" hidden>
   <div class="card">
     <h2>形勢評価</h2>
@@ -114,6 +114,9 @@
     <div class="row"><button id="fenLoad">FENを読み込む</button><button id="fenCopy">コピー</button></div>
   </div>
   </div>
+  <div class="tab" data-t="st" hidden>
+  <div id="styleMount"></div>
+  </div>
   <div class="tab" data-t="set" hidden>
   <div class="card">
     <h2>エンジンの状態</h2>
@@ -149,5 +152,6 @@
 <script src="js/app.js"></script>
 <script src="js/review.js"></script>
 <script src="js/kifu.js"></script>
+<script src="js/style.js"></script>
 </body>
 </html>
