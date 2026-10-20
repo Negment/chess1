@@ -81,7 +81,7 @@ function drawArrows(){
   const svg=$("ar");if(!svg)return;
   const P=q=>[(flipped?7-(q&7):q&7)+.5,(flipped?7-(q>>3):q>>3)+.5];
   let o='<defs>';
-  for(const[k,c]of[["me","#1f9d55"],["opp","#d6452f"],["mh","#2f6fd6"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
+  for(const[k,c]of[["me","#1f9d55"],["opp","#d6452f"],["mh","#2f6fd6"],["st","#8e44ad"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
   o+="</defs>";
   for(const r of results){
     if(!r.m)continue;
@@ -92,6 +92,12 @@ function drawArrows(){
       x2-=dx/L*.3;y2-=dy/L*.3;
       o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${wd}" stroke-opacity="${op}" marker-end="url(#m${r.w})"/>`;
     });
+  }
+  for(const r of results){
+    if(!r.style||!r.style.m||r.style.same)continue;
+    const[x1,y1]=P(r.style.m.f);let[x2,y2]=P(r.style.m.t);
+    const dx=x2-x1,dy=y2-y1,Ln=Math.hypot(dx,dy)||1;x2-=dx/Ln*.3;y2-=dy/Ln*.3;
+    o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#8e44ad" stroke-width=".13" stroke-dasharray=".25 .15" stroke-opacity=".9" marker-end="url(#mst)"/>`;
   }
   if(mres&&mres.items)for(const it of mres.items){
     const[x1,y1]=P(it.m.f);let[x2,y2]=P(it.m.t);
@@ -110,6 +116,10 @@ function renderRes(pending){
       +`<span class="tag ${r.src}">${r.src==="tb"?"確定(テーブルベース)":r.src==="sf"?"予想(Stockfish)":"予想(探索)"}</span><br><small>${r.text}</small>`
       +(r.sure?`<br><span class="tag s${r.sure.level==="確定"?1:r.sure.level==="一部確定"?2:3}">${r.sure.level}</span> <small>${r.sure.text}</small>`:"")
       +(r.alts||[]).map((a,i)=>`<br><small>${i+2}番手: <b>${a.san}</b> ／ ${a.text}</small>`).join("")
+      +(r.style?(r.style.none?`<br><span class="tag st">棋風</span> <small>${r.style.note}</small>`
+        :`<br><span class="tag st">棋風</span> <small>推奨 <b>${r.style.san}</b>${r.style.same?"(エンジンの1番手と同じ)":`(1番手との差 ${(r.style.diff/100).toFixed(2)})`}${r.style.why?" ／ "+r.style.why:""}</small>`
+        +`<br><small>評価が近い候補: ${r.style.set.map(x=>x.san+"("+x.score.toFixed(2)+")").join(" / ")}</small>`
+        +(r.w==="me"&&!r.style.same?` <button data-playst="${results.indexOf(r)}">棋風の手を指す</button>`:"")):"")
       +(r.w==="me"?` <button data-play="${results.indexOf(r)}">この手を指す</button>`:` <small>※相手が手番ならの手</small>`)+"</div>";
   }
   if(pending)h+=`<div class="res sub">${pending}</div>`;
@@ -140,7 +150,10 @@ $("bd").addEventListener("click",e=>{
   render();
 });
 $("hl").addEventListener("click",e=>{const b=e.target.closest("[data-i]");if(b){pos=+b.dataset.i;reset()}});
-$("res").addEventListener("click",e=>{const b=e.target.closest("[data-play]");if(b){const r=results[+b.dataset.play];if(r&&r.m)doMove(r.m)}});
+$("res").addEventListener("click",e=>{
+  const b=e.target.closest("[data-play]");if(b){const r=results[+b.dataset.play];if(r&&r.m)doMove(r.m)}
+  const c=e.target.closest("[data-playst]");if(c){const r=results[+c.dataset.playst];if(r&&r.style&&r.style.m)doMove(r.style.m)}
+});
 $("undo").onclick=()=>{if(pos>0){pos--;reset()}};
 $("redo").onclick=()=>{if(pos<hist.length-1){pos++;reset()}};
 document.addEventListener("keydown",e=>{
@@ -212,7 +225,13 @@ async function analyze(which){
     if(tk!==token)return;
     if(r){r.sure=await confirmInfo(st,r);if(tk!==token)return}
     if(r){const pc=prior(make(st,r.m));if(pc)r.text+=` ／ ※この手は同一局面${pc+1}回目になります`}
-    results.push(r?{w,...r,san:san(st,r.m),alts:(r.alts||[]).map(a=>({...a,san:san(st,a.m)}))}:{w});
+    let sty=null;
+    if(r&&typeof styleApply==="function"){
+      sty=styleApply(st,r,w);
+      if(sty&&sty.m)sty={...sty,san:san(st,sty.m),set:sty.set.map(x=>({...x,san:san(st,x.m)}))};
+      r.alts=(r.alts||[]).slice(0,Math.max(0,+$("npv").value-1));   // 表示する候補数は、設定の数だけ
+    }
+    results.push(r?{w,...r,san:san(st,r.m),alts:(r.alts||[]).map(a=>({...a,san:san(st,a.m)})),style:sty}:{w});
   }
   if(tk===token){renderRes();drawArrows()}
 }
