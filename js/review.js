@@ -104,7 +104,7 @@ async function fwRun(){
   FW.busy=false;renderEval();
 }
 function renderEval(){
-  const e=$("evalBox");if(!e)return;
+  const e=$("evalBox");if(!e||curTab!=="ev")return;
   const s=S(),v=evalParts(s),f=x=>(x>=0?"+":"")+x.toFixed(2);
   const bar=x=>x==null?'<span class="evbar"></span>':`<span class="evbar"><i class="${x<0?"neg":""}" style="${x<0?"right":"left"}:50%;width:${Math.min(50,Math.abs(x)*10)}%"></i></span>`;
   const row=(n,x,txt,bd)=>`<div class="ev"><span>${bd?"<b>"+n+"</b>":n}</span>${bar(x)}<b>${txt!=null?txt:x==null?"—":f(x)}</b></div>`;
@@ -318,5 +318,5 @@ async function humanRun(){
 }
 $("huGo").onclick=()=>{humanRun()};
 
-function renderReview(){renderEval();gaDraw();rvRender()}
-reviewMount();renderReview();
+function renderReview(){if(curTab!=="rv")return;gaDraw();rvRender()}
+reviewMount();

@@ -153,6 +153,17 @@ function legal(s,caps){
   });
 }
 
+/* ---------- 局面の同一判定(FIDE: アンパッサンは「実際に取れる時」だけ区別する) ---------- */
+function epLegal(s){
+  if(s.e<0)return false;
+  return legal(s).some(m=>s.b[m.f].toUpperCase()==="P"&&m.t===s.e);
+}
+function rkey(s){
+  const f=toFen(s).split(" ");
+  if(f[3]!=="-"&&!epLegal(s))f[3]="-";
+  return f.slice(0,4).join(" ");
+}
+
 /* ---------- 棋譜表記 ---------- */
 const uci=m=>sqName(m.f)+sqName(m.t)+m.pr;
 function san(s,m){

@@ -1,6 +1,7 @@
 "use strict";
 /* ---------- 状態・履歴 ---------- */
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
+let curTab="ana",batch=0;
 let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,draft=null;
 const S=()=>hist[pos].s;
 function validate(s){
@@ -11,13 +12,14 @@ function validate(s){
   return "";
 }
 function msg(t){$("msg").textContent=t||""}
-const rkey=s=>toFen(s).split(" ").slice(0,4).join(" ");
 function cnt(s){const k=rkey(s);let c=0;for(let i=Math.max(0,pos-S().h);i<=pos;i++)if(rkey(hist[i].s)===k)c++;return c}
 function prior(ns){return ns.h===0?0:cnt(ns)}
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
-function reset(){engineAbort("ui");draft=null;sel=null;results=[];mres=null;token++;render()}
+function reset(){engineAbort("ui");engineAbort("fw");draft=null;sel=null;results=[];mres=null;token++;if(!batch)render()}
+// 複数手をまとめて指す・読み込む時は、描画を最後の1回だけにする
+function batched(fn){batch++;try{return fn()}finally{batch--;if(!batch)render()}}
 function doMove(m){
   const s=S();
   const lb=`${s.n}${s.t==="w"?".":"…"}${san(s,m)}`;
@@ -74,8 +76,8 @@ function render(){
   if(typeof renderKifu==="function")renderKifu();
   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
   document.querySelectorAll(".cr").forEach(x=>x.checked=s.c.includes(x.value));
-  $("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
-  renderRes();renderMaia();if(typeof renderReview==="function")renderReview();
+  if(curTab==="kf")$("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
+  renderRes();renderMaia();if(typeof renderEval==="function")renderEval();if(typeof renderReview==="function")renderReview();
 }
 function drawArrows(){
   const svg=$("ar");if(!svg)return;
@@ -189,11 +191,9 @@ function inputMoves(){
   const toks=$("mv").value.replace(/\d+\s*\.+/g,"").replace(/\{[^}]*\}/g,"").split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
   if(!toks.length)return;
   let err=validate(S());if(err){msg(err);return}
-  for(const t of toks){
-    const m=parseTok(S(),t);
-    if(!m){msg(`「${t}」は今の局面で指せない、または曖昧な手です`);return}
-    doMove(m);
-  }
+  let bad=null;
+  batched(()=>{for(const t of toks){const m=parseTok(S(),t);if(!m){bad=t;return}doMove(m)}});
+  if(bad){msg(`「${bad}」は今の局面で指せない、または曖昧な手です`);return}
   $("mv").value="";msg("");
 }
 $("mvGo").onclick=inputMoves;
@@ -281,8 +281,10 @@ cacheInfo();
 function showTab(t){
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.t===t));
   document.querySelectorAll(".tab").forEach(x=>{x.hidden=x.dataset.t!==t});
+  curTab=t;
   const m=t==="ed"?"edit":"play";   // 配置タブを開いている間だけ配置モード。他のタブでは通常の対局操作
-  if(m!==mode){mode=m;sel=null;msg("");render()}
+  if(m!==mode){mode=m;sel=null;msg("")}
+  render();
 }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.t));
 function showPromo(pm){

@@ -15,6 +15,7 @@ function kfMoves(all){
 function kfResult(d){
   const last=d.moves.length?make(d.moves[d.moves.length-1].s,d.moves[d.moves.length-1].m):d.base;
   if(!legal(last).length)return inCheck(last,last.t==="w")?(last.t==="w"?"0-1":"1-0"):"1/2-1/2";
+  if(last.h>=150||insuf(last))return "1/2-1/2";   // 75手ルール・駒不足は自動で引き分け
   return "*";
 }
 function kfWrap(t,w){
@@ -63,7 +64,7 @@ function kfExport(){
   return h+"\n"+kfWrap((kfSeq(d,true,fn)+" "+res).trim(),80)+"\n";
 }
 function renderKifu(){
-  if(!$("kfOut"))return;
+  if(!$("kfOut")||curTab!=="kf")return;
   $("kfPgnOpt").hidden=!/^pgn/.test($("kfFmt").value);
   $("kfOut").value=kfExport();
 }
@@ -122,7 +123,8 @@ function kfParse(t,fmt,game){
   const body=g.replace(/^\s*\[\w+\s+"[^"]*"\]\s*$/gm,"");
   return{base:fm?parseFen(fm[1]):null,toks:kfTokens(body),n:games.length};
 }
-function kfApply(P,mode){
+const kfApply=(P,mode)=>batched(()=>kfApplyRaw(P,mode));
+function kfApplyRaw(P,mode){
   if(P.fens){
     if(mode==="replace"){hist=[{s:P.fens[0],label:"読込局面"}];pos=0;reset()}
     else commit(P.fens[0],"FEN読込");
@@ -180,4 +182,4 @@ function kifuMount(){
     }catch(e){ms.textContent="読み込めません: "+e.message}
   };
 }
-kifuMount();renderKifu();
+kifuMount();

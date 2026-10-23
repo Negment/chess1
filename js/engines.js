@@ -21,7 +21,7 @@ const SF_DIRS=["engines/stockfish/",""];   // まずこのフォルダ、なけ�
 const SF_FILES=["stockfish-19-single.js","stockfish-18-single.js","stockfish-19-lite-single.js","stockfish-18-lite-single.js","stockfish.js"];
 const SF_LABEL={"stockfish-19-single.js":"Stockfish 19 大(強い)","stockfish-18-single.js":"Stockfish 18 大","stockfish-19-lite-single.js":"Stockfish 19 lite(軽い)","stockfish-18-lite-single.js":"Stockfish 18 lite","stockfish.js":"stockfish.js(汎用名)"};
 let sf=null,sfNone=false,sfP=null;
-function sfReset(){if(sf){sf.terminate();sf=null}sfNone=false;setSt("sfSt","未起動(選択を変えました。「起動」か最善手で読み込みます)")}
+function sfReset(){for(const j of sfPend){j.abort=true;if(j.cancel)j.cancel()}if(sf){sf.terminate();sf=null}sfNone=false;setSt("sfSt","未起動(選択を変えました。「起動」か最善手で読み込みます)")}
 async function sfProbe(){
   const sel=$("sfSel");if(!sel)return;
   const keepV=sel.value||"auto";
@@ -68,12 +68,28 @@ async function sfInit(){
   }finally{clearInterval(tick)}
 }
 const ABORT=new Error("aborted");
-let sfJob=null;
-function engineAbort(kind){if(sfJob&&sf&&sfJob.kind===kind){sfJob.abort=true;sf.postMessage("stop")}}
+/* Stockfish は1本のWorkerを共有するため、探索は必ず1つずつ順番に実行する。
+   前の探索の bestmove を受け取ってから次を始めるので、stop 直後の古い結果が混ざらない。 */
+let sfJob=null,sfTail=Promise.resolve();
+const sfPend=new Set();
+function engineAbort(kind){
+  for(const j of sfPend)if(j.kind===kind){j.abort=true;if(j===sfJob&&sf)sf.postMessage("stop")}
+}
 function sfBest(w,s,am,all,t,N,kind="ui"){
+  const job={kind,abort:false};sfPend.add(job);
+  const run=()=>{
+    if(job.abort){sfPend.delete(job);const o=[];o.aborted=true;return o}   // 待機中に中止された
+    return sfRun(w,job,s,am,all,t,N).finally(()=>sfPend.delete(job));
+  };
+  const p=sfTail.then(run);
+  sfTail=p.then(()=>{},()=>{});
+  return p;
+}
+function sfRun(w,job,s,am,all,t,N){
   return new Promise(res=>{
-    const job={kind,abort:false};sfJob=job;
+    sfJob=job;
     const L={},to=setTimeout(()=>w.postMessage("stop"),t+5000);
+    job.cancel=()=>{clearTimeout(to);const o=[];o.aborted=true;if(sfJob===job)sfJob=null;res(o)};   // Workerを作り直す時用
     w.onmessage=e=>{
       const l=String(e.data);
       if(l.startsWith("info")&&l.includes(" pv ")&&l.includes(" score ")&&!/lowerbound|upperbound/.test(l)){

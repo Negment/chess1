@@ -1,0 +1,357 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+new file mode 100644
+index 0000000..82d50a4
+--- /dev/null
++++ b/.github/workflows/test.yml
+@@ -0,0 +1,10 @@
++name: test
++on: [push, pull_request]
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with: { node-version: 22 }
++      - run: npm test
+diff --git a/js/app.js b/js/app.js
+index 08eceb0..73765a0 100644
+--- a/js/app.js
++++ b/js/app.js
+@@ -1,6 +1,7 @@
+ "use strict";
+ /* ---------- 状態・履歴 ---------- */
+ let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
++let curTab="ana",batch=0;
+ let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,draft=null;
+ const S=()=>hist[pos].s;
+ function validate(s){
+@@ -11,13 +12,14 @@ function validate(s){
+   return "";
+ }
+ function msg(t){$("msg").textContent=t||""}
+-const rkey=s=>toFen(s).split(" ").slice(0,4).join(" ");
+ function cnt(s){const k=rkey(s);let c=0;for(let i=Math.max(0,pos-S().h);i<=pos;i++)if(rkey(hist[i].s)===k)c++;return c}
+ function prior(ns){return ns.h===0?0:cnt(ns)}
+ function commit(ns,label,mv){
+   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
+ }
+-function reset(){engineAbort("ui");draft=null;sel=null;results=[];mres=null;token++;render()}
++function reset(){engineAbort("ui");engineAbort("fw");draft=null;sel=null;results=[];mres=null;token++;if(!batch)render()}
++// 複数手をまとめて指す・読み込む時は、描画を最後の1回だけにする
++function batched(fn){batch++;try{return fn()}finally{batch--;if(!batch)render()}}
+ function doMove(m){
+   const s=S();
+   const lb=`${s.n}${s.t==="w"?".":"…"}${san(s,m)}`;
+@@ -74,8 +76,8 @@ function render(){
+   if(typeof renderKifu==="function")renderKifu();
+   $("undo").disabled=pos===0;$("redo").disabled=pos>=hist.length-1;
+   document.querySelectorAll(".cr").forEach(x=>x.checked=s.c.includes(x.value));
+-  $("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
+-  renderRes();renderMaia();if(typeof renderReview==="function")renderReview();
++  if(curTab==="kf")$("hl").innerHTML=hist.map((x,i)=>`<button data-i="${i}" class="${i===pos?"on":""}">${x.mv?x.label:"✎ "+x.label}</button>`).join("");
++  renderRes();renderMaia();if(typeof renderEval==="function")renderEval();if(typeof renderReview==="function")renderReview();
+ }
+ function drawArrows(){
+   const svg=$("ar");if(!svg)return;
+@@ -189,11 +191,9 @@ function inputMoves(){
+   const toks=$("mv").value.replace(/\d+\s*\.+/g,"").replace(/\{[^}]*\}/g,"").split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
+   if(!toks.length)return;
+   let err=validate(S());if(err){msg(err);return}
+-  for(const t of toks){
+-    const m=parseTok(S(),t);
+-    if(!m){msg(`「${t}」は今の局面で指せない、または曖昧な手です`);return}
+-    doMove(m);
+-  }
++  let bad=null;
++  batched(()=>{for(const t of toks){const m=parseTok(S(),t);if(!m){bad=t;return}doMove(m)}});
++  if(bad){msg(`「${bad}」は今の局面で指せない、または曖昧な手です`);return}
+   $("mv").value="";msg("");
+ }
+ $("mvGo").onclick=inputMoves;
+@@ -281,8 +281,10 @@ cacheInfo();
+ function showTab(t){
+   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.t===t));
+   document.querySelectorAll(".tab").forEach(x=>{x.hidden=x.dataset.t!==t});
++  curTab=t;
+   const m=t==="ed"?"edit":"play";   // 配置タブを開いている間だけ配置モード。他のタブでは通常の対局操作
+-  if(m!==mode){mode=m;sel=null;msg("");render()}
++  if(m!==mode){mode=m;sel=null;msg("")}
++  render();
+ }
+ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+ function showPromo(pm){
+diff --git a/js/chess.js b/js/chess.js
+index 166b6dc..414b42e 100644
+--- a/js/chess.js
++++ b/js/chess.js
+@@ -153,6 +153,17 @@ function legal(s,caps){
+   });
+ }
+ 
++/* ---------- 局面の同一判定(FIDE: アンパッサンは「実際に取れる時」だけ区別する) ---------- */
++function epLegal(s){
++  if(s.e<0)return false;
++  return legal(s).some(m=>s.b[m.f].toUpperCase()==="P"&&m.t===s.e);
++}
++function rkey(s){
++  const f=toFen(s).split(" ");
++  if(f[3]!=="-"&&!epLegal(s))f[3]="-";
++  return f.slice(0,4).join(" ");
++}
++
+ /* ---------- 棋譜表記 ---------- */
+ const uci=m=>sqName(m.f)+sqName(m.t)+m.pr;
+ function san(s,m){
+diff --git a/js/engines.js b/js/engines.js
+index e8ec4ba..207c0db 100644
+--- a/js/engines.js
++++ b/js/engines.js
+@@ -21,7 +21,7 @@ const SF_DIRS=["engines/stockfish/",""];   // まずこのフォルダ、なけ
+ const SF_FILES=["stockfish-19-single.js","stockfish-18-single.js","stockfish-19-lite-single.js","stockfish-18-lite-single.js","stockfish.js"];
+ const SF_LABEL={"stockfish-19-single.js":"Stockfish 19 大(強い)","stockfish-18-single.js":"Stockfish 18 大","stockfish-19-lite-single.js":"Stockfish 19 lite(軽い)","stockfish-18-lite-single.js":"Stockfish 18 lite","stockfish.js":"stockfish.js(汎用名)"};
+ let sf=null,sfNone=false,sfP=null;
+-function sfReset(){if(sf){sf.terminate();sf=null}sfNone=false;setSt("sfSt","未起動(選択を変えました。「起動」か最善手で読み込みます)")}
++function sfReset(){for(const j of sfPend){j.abort=true;if(j.cancel)j.cancel()}if(sf){sf.terminate();sf=null}sfNone=false;setSt("sfSt","未起動(選択を変えました。「起動」か最善手で読み込みます)")}
+ async function sfProbe(){
+   const sel=$("sfSel");if(!sel)return;
+   const keepV=sel.value||"auto";
+@@ -68,12 +68,28 @@ async function sfInit(){
+   }finally{clearInterval(tick)}
+ }
+ const ABORT=new Error("aborted");
+-let sfJob=null;
+-function engineAbort(kind){if(sfJob&&sf&&sfJob.kind===kind){sfJob.abort=true;sf.postMessage("stop")}}
++/* Stockfish は1本のWorkerを共有するため、探索は必ず1つずつ順番に実行する。
++   前の探索の bestmove を受け取ってから次を始めるので、stop 直後の古い結果が混ざらない。 */
++let sfJob=null,sfTail=Promise.resolve();
++const sfPend=new Set();
++function engineAbort(kind){
++  for(const j of sfPend)if(j.kind===kind){j.abort=true;if(j===sfJob&&sf)sf.postMessage("stop")}
++}
+ function sfBest(w,s,am,all,t,N,kind="ui"){
++  const job={kind,abort:false};sfPend.add(job);
++  const run=()=>{
++    if(job.abort){sfPend.delete(job);const o=[];o.aborted=true;return o}   // 待機中に中止された
++    return sfRun(w,job,s,am,all,t,N).finally(()=>sfPend.delete(job));
++  };
++  const p=sfTail.then(run);
++  sfTail=p.then(()=>{},()=>{});
++  return p;
++}
++function sfRun(w,job,s,am,all,t,N){
+   return new Promise(res=>{
+-    const job={kind,abort:false};sfJob=job;
++    sfJob=job;
+     const L={},to=setTimeout(()=>w.postMessage("stop"),t+5000);
++    job.cancel=()=>{clearTimeout(to);const o=[];o.aborted=true;if(sfJob===job)sfJob=null;res(o)};   // Workerを作り直す時用
+     w.onmessage=e=>{
+       const l=String(e.data);
+       if(l.startsWith("info")&&l.includes(" pv ")&&l.includes(" score ")&&!/lowerbound|upperbound/.test(l)){
+diff --git a/js/kifu.js b/js/kifu.js
+index 03b83bf..40220dd 100644
+--- a/js/kifu.js
++++ b/js/kifu.js
+@@ -15,6 +15,7 @@ function kfMoves(all){
+ function kfResult(d){
+   const last=d.moves.length?make(d.moves[d.moves.length-1].s,d.moves[d.moves.length-1].m):d.base;
+   if(!legal(last).length)return inCheck(last,last.t==="w")?(last.t==="w"?"0-1":"1-0"):"1/2-1/2";
++  if(last.h>=150||insuf(last))return "1/2-1/2";   // 75手ルール・駒不足は自動で引き分け
+   return "*";
+ }
+ function kfWrap(t,w){
+@@ -63,7 +64,7 @@ function kfExport(){
+   return h+"\n"+kfWrap((kfSeq(d,true,fn)+" "+res).trim(),80)+"\n";
+ }
+ function renderKifu(){
+-  if(!$("kfOut"))return;
++  if(!$("kfOut")||curTab!=="kf")return;
+   $("kfPgnOpt").hidden=!/^pgn/.test($("kfFmt").value);
+   $("kfOut").value=kfExport();
+ }
+@@ -122,7 +123,8 @@ function kfParse(t,fmt,game){
+   const body=g.replace(/^\s*\[\w+\s+"[^"]*"\]\s*$/gm,"");
+   return{base:fm?parseFen(fm[1]):null,toks:kfTokens(body),n:games.length};
+ }
+-function kfApply(P,mode){
++const kfApply=(P,mode)=>batched(()=>kfApplyRaw(P,mode));
++function kfApplyRaw(P,mode){
+   if(P.fens){
+     if(mode==="replace"){hist=[{s:P.fens[0],label:"読込局面"}];pos=0;reset()}
+     else commit(P.fens[0],"FEN読込");
+@@ -180,4 +182,4 @@ function kifuMount(){
+     }catch(e){ms.textContent="読み込めません: "+e.message}
+   };
+ }
+-kifuMount();renderKifu();
++kifuMount();
+diff --git a/js/review.js b/js/review.js
+index 07593f8..4f69436 100644
+--- a/js/review.js
++++ b/js/review.js
+@@ -104,7 +104,7 @@ async function fwRun(){
+   FW.busy=false;renderEval();
+ }
+ function renderEval(){
+-  const e=$("evalBox");if(!e)return;
++  const e=$("evalBox");if(!e||curTab!=="ev")return;
+   const s=S(),v=evalParts(s),f=x=>(x>=0?"+":"")+x.toFixed(2);
+   const bar=x=>x==null?'<span class="evbar"></span>':`<span class="evbar"><i class="${x<0?"neg":""}" style="${x<0?"right":"left"}:50%;width:${Math.min(50,Math.abs(x)*10)}%"></i></span>`;
+   const row=(n,x,txt,bd)=>`<div class="ev"><span>${bd?"<b>"+n+"</b>":n}</span>${bar(x)}<b>${txt!=null?txt:x==null?"—":f(x)}</b></div>`;
+@@ -318,5 +318,5 @@ async function humanRun(){
+ }
+ $("huGo").onclick=()=>{humanRun()};
+ 
+-function renderReview(){renderEval();gaDraw();rvRender()}
+-reviewMount();renderReview();
++function renderReview(){if(curTab!=="rv")return;gaDraw();rvRender()}
++reviewMount();
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..f659080
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,8 @@
++{
++  "name": "chess1",
++  "private": true,
++  "scripts": {
++    "test": "node --test \"test/*.test.js\"",
++    "serve": "npx --yes http-server -c-1 -p 8080 ."
++  }
++}
+diff --git a/test/engine-queue.test.js b/test/engine-queue.test.js
+new file mode 100644
+index 0000000..538594c
+--- /dev/null
++++ b/test/engine-queue.test.js
+@@ -0,0 +1,65 @@
++// Stockfish ジョブキュー: 同時に走らない / stop後の古い bestmove が次の探索に混ざらない
++const test=require("node:test"),assert=require("node:assert/strict");
++const {load,pick}=require("./helpers");
++
++function fakeWorker(log){
++  const w={running:null,onmessage:null,
++    postMessage(c){
++      log.push(c);
++      if(c.startsWith("position"))w.fen=c.slice(9);
++      if(c.startsWith("go")){
++        const fen=w.fen;w.running=fen;
++        w.timer=setTimeout(()=>w.finish(fen),30);        // 自然終了
++      }
++      if(c==="stop"&&w.running){clearTimeout(w.timer);const fen=w.running;setTimeout(()=>w.finish(fen),5)}   // 少し遅れて bestmove
++    },
++    finish(fen){
++      w.running=null;
++      w.onmessage({data:`info depth 5 multipv 1 score cp 10 pv e2e4`});
++      w.onmessage({data:`bestmove e2e4 (for ${fen})`});
++    }};
++  return w;
++}
++function env(){
++  const ctx=load(["chess.js","engines.js"],{localStorage:{},fetch:async()=>({ok:false})});
++  // engines.js が DOM(getElementById)を触る箇所に備えたダミー
++  ctx.document.getElementById=()=>({value:"",checked:true,textContent:""});
++  return ctx;
++}
++const S="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
++
++test("探索は直列に実行され、重ならない",async()=>{
++  const ctx=env(),log=[],w=fakeWorker(log);
++  const {sfBest,parseFen,legal}=pick(ctx,["sfBest","parseFen","legal"]);
++  const s=parseFen(S),ms=legal(s);
++  let overlap=false;const orig=w.postMessage;
++  w.postMessage=c=>{if(c.startsWith("go")&&w.running)overlap=true;orig.call(w,c)};
++  const rs=await Promise.all([sfBest(w,s,ms,ms,10,1,"ui"),sfBest(w,s,ms,ms,10,1,"ga"),sfBest(w,s,ms,ms,10,1,"fw")]);
++  assert.equal(overlap,false);
++  assert.ok(rs.every(r=>r.length===1&&!r.aborted));
++});
++test("待機中のジョブを中止すると、Workerに触れずに aborted で返る",async()=>{
++  const ctx=env(),log=[],w=fakeWorker(log);
++  const {sfBest,engineAbort,parseFen,legal}=pick(ctx,["sfBest","engineAbort","parseFen","legal"]);
++  const s=parseFen(S),ms=legal(s);
++  const a=sfBest(w,s,ms,ms,10,1,"ga"),b=sfBest(w,s,ms,ms,10,1,"fw");
++  engineAbort("fw");
++  const [ra,rb]=await Promise.all([a,b]);
++  assert.equal(ra.aborted,false);assert.equal(rb.aborted,true);
++  assert.equal(log.filter(c=>c.startsWith("go")).length,1);
++});
++test("実行中のジョブを中止しても、次のジョブに古い結果が混ざらない",async()=>{
++  const ctx=env(),log=[],w=fakeWorker(log);
++  const {sfBest,engineAbort,parseFen,legal}=pick(ctx,["sfBest","engineAbort","parseFen","legal"]);
++  const s=parseFen(S),ms=legal(s);
++  const first=sfBest(w,s,ms,ms,1000,1,"ui");
++  await new Promise(r=>setTimeout(r,5));
++  engineAbort("ui");
++  const second=sfBest(w,s,ms,ms,10,1,"ui");
++  const [r1,r2]=await Promise.all([first,second]);
++  assert.equal(r1.aborted,true);
++  assert.equal(r2.aborted,false);assert.equal(r2.length,1);
++  // go は「前の bestmove を受け取った後」にだけ送られている
++  const goIdx=log.map((c,i)=>c.startsWith("go")?i:-1).filter(i=>i>=0);
++  assert.equal(goIdx.length,2);
++});
+diff --git a/test/helpers.js b/test/helpers.js
+new file mode 100644
+index 0000000..7740783
+--- /dev/null
++++ b/test/helpers.js
+@@ -0,0 +1,10 @@
++// ブラウザ用のグローバルスクリプトを、DOMなしでNodeから読み込む
++const fs=require("fs"),path=require("path"),vm=require("vm");
++function load(files,extraGlobals={}){
++  const ctx=vm.createContext({document:{getElementById:()=>({})},console,setTimeout,clearTimeout,Date,...extraGlobals});
++  for(const f of files)vm.runInContext(fs.readFileSync(path.join(__dirname,"..","js",f),"utf8"),ctx,{filename:f});
++  return ctx;
++}
++// スクリプト内の const/function を取り出す
++const pick=(ctx,names)=>vm.runInContext("({"+names.join(",")+"})",ctx);
++module.exports={load,pick};
+diff --git a/test/rules.test.js b/test/rules.test.js
+new file mode 100644
+index 0000000..ebbd8f9
+--- /dev/null
++++ b/test/rules.test.js
+@@ -0,0 +1,42 @@
++const test=require("node:test"),assert=require("node:assert/strict");
++const {load,pick}=require("./helpers");
++const R=pick(load(["chess.js"]),["START","parseFen","toFen","make","legal","san","parseTok","rkey","inCheck"]);
++const {START,parseFen,toFen,make,legal,san,parseTok,rkey}=R;
++
++const perft=(s,d)=>{if(!d)return 1;let n=0;for(const m of legal(s))n+=perft(make(s,m),d-1);return n};
++for(const [name,fen,d,exp] of [
++  ["初期配置",START,3,8902],
++  ["Kiwipete","r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",3,97862],
++  ["局面3(アンパッサン・ピン)","8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",4,43238],
++  ["局面4(昇格・キャスリング)","r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",3,9467],
++  ["局面5","rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",3,62379],
++])test("perft: "+name,()=>assert.equal(perft(parseFen(fen),d),exp));
++
++const play=(toks,s=parseFen(START))=>{const keys=[];for(const t of toks){const m=parseTok(s,t);assert.ok(m,t);s=make(s,m);keys.push(rkey(s))}return{s,keys}};
++
++test("同一局面: 取れないアンパッサン欄は区別しない(1.e4直後 = 3.Nb1直後)",()=>{
++  const {keys}=play(["e4","Nf6","Nc3","Ng8","Nb1"]);
++  assert.equal(keys[0],keys[4]);
++});
++test("同一局面: 実際にアンパッサンで取れる局面は区別する",()=>{
++  const a=parseFen("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1");   // dxe3 e.p. が可能
++  const b=parseFen("4k3/8/8/8/3pP3/8/8/4K3 b - - 0 1");
++  assert.notEqual(rkey(a),rkey(b));
++});
++test("SAN: 往復変換(キャスリング・昇格・曖昧さ解消)",()=>{
++  const cases=[["r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",["O-O","O-O-O"]],
++    ["4k3/1P6/8/8/8/8/8/4K3 w - - 0 1",["b8=Q+","b8=N"]],
++    ["4k3/8/8/8/8/8/4K3/R6R w - - 0 1",["Rad1","Rhd1","Rag1"]]];
++  for(const [f,toks] of cases)for(const t of toks){
++    const s=parseFen(f),m=parseTok(s,t);assert.ok(m,t);
++    assert.equal(san(s,m),t);
++  }
++});
++test("FEN: 往復して同じ文字列になる",()=>{
++  const f="r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
++  assert.equal(toFen(parseFen(f)),f);
++});
++test("FEN: 不正な局面は例外",()=>{
++  assert.throws(()=>parseFen("8/8/8/8/8/8/8/8 w - - 0 1"));                       // キングなし
++  assert.throws(()=>parseFen("4k3/8/8/8/8/8/8/4K2P w - - 0 1"));                  // 1段目のポーン
++});
