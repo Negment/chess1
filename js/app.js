@@ -2,6 +2,7 @@
 /* ---------- 状態・履歴 ---------- */
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
 let curTab="ana",batch=0;
+let autoPick=null,autoPickFen="";   // おまかせで選んだ手と、その時の局面(局面が変わると矢印を消す)
 let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,draft=null;
 const S=()=>hist[pos].s;
 function validate(s){
@@ -17,7 +18,7 @@ function prior(ns){return ns.h===0?0:cnt(ns)}
 function commit(ns,label,mv){
   hist.length=pos+1;hist.push({s:ns,label,mv});pos++;reset();
 }
-function reset(){engineAbort("ui");engineAbort("fw");draft=null;sel=null;results=[];mres=null;token++;if(!batch)render()}
+function reset(){autoPick=null;engineAbort("ui");engineAbort("fw");draft=null;sel=null;results=[];mres=null;token++;if(!batch)render()}
 // 複数手をまとめて指す・読み込む時は、描画を最後の1回だけにする
 function batched(fn){batch++;try{return fn()}finally{batch--;if(!batch)render()}}
 function doMove(m){
@@ -83,7 +84,7 @@ function drawArrows(){
   const svg=$("ar");if(!svg)return;
   const P=q=>[(flipped?7-(q&7):q&7)+.5,(flipped?7-(q>>3):q>>3)+.5];
   let o='<defs>';
-  for(const[k,c]of[["me","#1f9d55"],["opp","#d6452f"],["mh","#2f6fd6"],["st","#8e44ad"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
+  for(const[k,c]of[["me","#1f9d55"],["opp","#d6452f"],["mh","#2f6fd6"],["st","#8e44ad"],["au","#e0a800"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
   o+="</defs>";
   for(const r of results){
     if(!r.m)continue;
@@ -105,6 +106,11 @@ function drawArrows(){
     const[x1,y1]=P(it.m.f);let[x2,y2]=P(it.m.t);
     const dx=x2-x1,dy=y2-y1,Ln=Math.hypot(dx,dy)||1;x2-=dx/Ln*.3;y2-=dy/Ln*.3;
     o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2f6fd6" stroke-width="${.06+.12*it.p}" stroke-opacity="${.3+.6*it.p}" marker-end="url(#mmh)"/>`;
+  }
+  if(autoPick&&autoPickFen===toFen(S())){
+    const[x1,y1]=P(autoPick.f);let[x2,y2]=P(autoPick.t);
+    const dx=x2-x1,dy=y2-y1,Ln=Math.hypot(dx,dy)||1;x2-=dx/Ln*.3;y2-=dy/Ln*.3;
+    o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#e0a800" stroke-width=".2" stroke-opacity=".9" marker-end="url(#mau)"/>`;
   }
   svg.innerHTML=o;
 }
