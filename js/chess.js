@@ -195,28 +195,82 @@ function parseTok(s,t){
   return r.length===1?r[0]:null;
 }
 
-/* ---------- 探索エンジン ---------- */
+/* ---------- 探索エンジン(自作・フォールバック用) ----------
+   ミニマックス(ネガマックス)+アルファベータ。置換表・キラー手・ヒストリー・null move・
+   後ろの静かな手を浅く読むLMR・駒の配置表(PST)による評価を入れている。 */
 const V={P:100,N:320,B:330,R:500,Q:900,K:0};
+const MATE_BAND=MATE-200;   // これより大きい点数は詰みとして扱い、置換表では手数を補正する
+const PH={N:1,B:1,R:2,Q:4};  // 途中の段階(序盤=24、終盤=0)を決める重み
+
+/* 駒の配置表。白の視点で、先頭の行が8段目。黒は上下を反転して使う。 */
+const PST_MG={
+  P:[0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10, 5,5,10,25,25,10,5,5, 0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5, 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0],
+  N:[-50,-40,-30,-30,-30,-30,-40,-50, -40,-20,0,0,0,0,-20,-40, -30,0,10,15,15,10,0,-30, -30,5,15,20,20,15,5,-30, -30,0,15,20,20,15,0,-30, -30,5,10,15,15,10,5,-30, -40,-20,0,5,5,0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50],
+  B:[-20,-10,-10,-10,-10,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,10,10,5,0,-10, -10,5,5,10,10,5,5,-10, -10,0,10,10,10,10,0,-10, -10,10,10,10,10,10,10,-10, -10,5,0,0,0,0,5,-10, -20,-10,-10,-10,-10,-10,-10,-20],
+  R:[0,0,0,0,0,0,0,0, 5,10,10,10,10,10,10,5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, 0,0,0,5,5,0,0,0],
+  Q:[-20,-10,-10,-5,-5,-10,-10,-20, -10,0,0,0,0,0,0,-10, -10,0,5,5,5,5,0,-10, -5,0,5,5,5,5,0,-5, 0,0,5,5,5,5,0,-5, -10,5,5,5,5,5,0,-10, -10,0,5,0,0,0,0,-10, -20,-10,-10,-5,-5,-10,-10,-20],
+  K:[-30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30, -20,-30,-30,-40,-40,-30,-30,-20, -10,-20,-20,-20,-20,-20,-20,-10, 20,20,0,0,0,0,20,20, 20,30,10,0,0,10,30,20]
+};
+const PST_EG={
+  P:[0,0,0,0,0,0,0,0, 80,80,80,80,80,80,80,80, 50,50,50,50,50,50,50,50, 30,30,30,30,30,30,30,30, 20,20,20,20,20,20,20,20, 10,10,10,10,10,10,10,10, 10,10,10,10,10,10,10,10, 0,0,0,0,0,0,0,0],
+  K:[-50,-40,-30,-20,-20,-30,-40,-50, -30,-20,-10,0,0,-10,-20,-30, -30,-10,20,30,30,20,-10,-30, -30,-10,30,40,40,30,-10,-30, -30,-10,30,40,40,30,-10,-30, -30,-10,20,30,30,20,-10,-30, -30,-30,0,0,0,0,-30,-30, -50,-30,-30,-30,-30,-30,-30,-50]
+};
+
 function ev(s){
-  const b=s.b,cnt=b.filter(Boolean).length;let v=0;
+  const b=s.b;let mg=0,eg=0,ph=0,bp=[0,0];
   for(let i=0;i<64;i++){
     const p=b[i];if(!p)continue;
-    const w=isW(p),u=p.toUpperCase(),r=i>>3,c=i&7,d=Math.abs(c-3.5)+Math.abs(r-3.5);
-    let x=V[u];
-    if(u==="P")x+=(w?6-r:r-1)*6;
-    else if(u==="N"||u==="B"||u==="Q")x+=(4-d)*4;
-    else if(u==="K"&&cnt<=10)x+=(4-d)*8;
-    v+=w?x:-x;
+    const w=isW(p),u=p.toUpperCase(),r=i>>3,f=i&7,sg=w?1:-1;
+    const idx=w?i:((7-r)<<3)|f;          // 黒は、自分の側から見た位置で引く
+    mg+=sg*(V[u]+PST_MG[u][idx]);
+    eg+=sg*(V[u]+(PST_EG[u]||PST_MG[u])[idx]);
+    if(PH[u])ph+=PH[u];
+    if(u==="B")bp[w?0:1]++;
   }
-  return s.t==="w"?v:-v;
+  if(bp[0]>=2){mg+=30;eg+=40}
+  if(bp[1]>=2){mg-=30;eg-=40}
+  const t=Math.min(24,ph),score=(mg*t+eg*(24-t))/24;
+  return s.t==="w"?score:-score;
 }
+
+/* 局面の鍵(Zobrist)。52ビットの数値。乱数は決まった種から作るので、毎回同じになる */
+const HZ={},HCAST={},HEP=[];
+(function(){
+  let x=0x2545F491;const r=()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return x>>>0};
+  const key=()=>[r()&0xfffff,r()];
+  for(const p of "PNBRQKpnbrqk"){HZ[p]={hi:[],lo:[]};for(let i=0;i<64;i++){const k=key();HZ[p].hi[i]=k[0];HZ[p].lo[i]=k[1]}}
+  for(const c of "KQkq")HCAST[c]=key();
+  for(let f=0;f<8;f++)HEP[f]=key();
+  HZ.side=key();
+})();
+function hashKey(s){
+  let hi=0,lo=0;
+  for(let i=0;i<64;i++){const p=s.b[i];if(p){const z=HZ[p];hi^=z.hi[i];lo^=z.lo[i]}}
+  if(s.t==="b"){hi^=HZ.side[0];lo^=HZ.side[1]}
+  for(const c of s.c||""){const k=HCAST[c];if(k){hi^=k[0];lo^=k[1]}}
+  if(s.e>=0){const k=HEP[s.e&7];hi^=k[0];lo^=k[1]}
+  return (hi>>>0)*4294967296+(lo>>>0);
+}
+
+/* 置換表・キラー手・ヒストリー(探索のたびに作り直す) */
+const TT=new Map(),TT_MAX=400000;
+let KILL=[];const HIST=new Float64Array(4096);
+const toTT=(sc,ply)=>sc>MATE_BAND?sc+ply:sc<-MATE_BAND?sc-ply:sc;
+const fromTT=(sc,ply)=>sc>MATE_BAND?sc-ply:sc<-MATE_BAND?sc+ply:sc;
+const hasMajor=s=>{for(let i=0;i<64;i++){const p=s.b[i];if(p&&isW(p)===(s.t==="w")&&"NBRQ".includes(p.toUpperCase()))return true}return false};
+
 let nodes=0,tEnd=0;
 const chk=()=>{if((++nodes&1023)===0&&Date.now()>tEnd)throw"T"};
-function order(s,ms,first){
+
+/* 手の順番: 置換表の手 > 良い駒取り > 成り > キラー手 > ヒストリー の順 */
+function order(s,ms,first,ply){
+  const kl=KILL[ply]||[];
   const sc=m=>{
     let x=0;const v=s.b[m.t]||(s.b[m.f].toUpperCase()==="P"&&m.t===s.e?"P":"");
     if(v)x+=10*V[v.toUpperCase()]-V[s.b[m.f].toUpperCase()]/10+1000;
     if(m.pr)x+=800;
+    if(!v&&kl.some(k=>k&&k.f===m.f&&k.t===m.t))x+=900;
+    if(!v)x+=Math.min(HIST[m.f*64+m.t],700);
     if(first&&m.f===first.f&&m.t===first.t&&m.pr===first.pr)x+=1e6;
     return x;
   };
@@ -224,6 +278,7 @@ function order(s,ms,first){
 }
 const keyOf=s=>s.b.map(p=>p||".").join("")+s.t+s.c;
 let SEARCH_HIST=new Set(),PATHK=[];
+
 function qs(s,a,b,ply){
   chk();ply=ply||0;
   const ic=inCheck(s,s.t==="w");
@@ -241,31 +296,73 @@ function qs(s,a,b,ply){
   }
   return a;
 }
+
 function nm(s,d,a,b,ply){
   chk();
   if(s.h>=100)return 0;
   let rk=null;
   if(s.h>=4){rk=keyOf(s);if(SEARCH_HIST.has(rk)||PATHK.includes(rk))return 0}
   const w=s.t==="w",ic=inCheck(s,w);
-  if((d<=0&&!ic)||ply>16)return qs(s,a,b,ply);
+  if((d<=0&&!ic)||ply>24)return qs(s,a,b,ply);
   const ms=legal(s);
   if(!ms.length)return ic?-(MATE-ply):0;
+
+  const key=hashKey(s),te=TT.get(key);
+  const ttm=te?te.m:null;
+  if(te&&te.d>=d&&ply>0){
+    const sc=fromTT(te.s,ply);
+    if(te.f===0)return sc;
+    if(te.f===1&&sc>=b)return sc;
+    if(te.f===2&&sc<=a)return sc;
+  }
+
   PATHK.push(rk);
   try{
-    for(const m of order(s,ms)){
-      const sc=-nm(make(s,m),d-1,-b,-a,ply+1);
-      if(sc>=b)return sc;if(sc>a)a=sc;
+    // null move: 手番を渡しても b 以上なら、この枝は切ってよい(持ち駒の少ない局面では使わない)
+    if(!ic&&d>=3&&ply>0&&hasMajor(s)){
+      const R=d>=6?3:2;
+      const ns={...s,t:w?"b":"w",e:-1,h:s.h+1};
+      const sc=-nm(ns,d-1-R,-b,-b+1,ply+1);
+      if(sc>=b)return b;
     }
+
+    const a0=a;let best=-MATE-1,bm=null;
+    const ord=order(s,ms,ttm,ply);
+    for(let i=0;i<ord.length;i++){
+      const m=ord[i];
+      const quiet=!s.b[m.t]&&!m.pr&&!(s.b[m.f].toUpperCase()==="P"&&m.t===s.e);
+      // 後ろの静かな手は浅く読み、良さそうなら読み直す(LMR)
+      const late=i>=3&&d>=3&&quiet&&!ic;
+      const child=make(s,m);
+      let sc=-nm(child,late?d-2:d-1,-b,-a,ply+1);
+      if(late&&sc>a)sc=-nm(child,d-1,-b,-a,ply+1);
+      if(sc>best){best=sc;bm=m}
+      if(sc>a)a=sc;
+      if(a>=b){
+        if(quiet){
+          KILL[ply]=KILL[ply]||[];
+          const kl=KILL[ply];
+          if(!(kl[0]&&kl[0].f===m.f&&kl[0].t===m.t)){kl[1]=kl[0];kl[0]={f:m.f,t:m.t}}
+          HIST[m.f*64+m.t]+=d*d;
+        }
+        break;
+      }
+    }
+    const f=best<=a0?2:best>=b?1:0;   // 0=正確 1=下限(b以上) 2=上限(a以下)
+    if(TT.size<TT_MAX)TT.set(key,{d,s:toTT(best,ply),f,m:bm});
+    return best;
   }finally{PATHK.pop()}
-  return a;
 }
+
 function search(s,ms,limit,maxD){
   nodes=0;tEnd=Date.now()+limit;PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
+  if(TT.size>TT_MAX*0.8)TT.clear();
+  KILL=[];HIST.fill(0);
   let best=ms[0],bs=0,depth=0;
   try{
     for(let d=1;d<=maxD;d++){
       let a=-MATE-1,cb=null,cs=-Infinity;
-      for(const m of order(s,ms,best)){
+      for(const m of order(s,ms,best,0)){
         const sc=-nm(make(s,m),d-1,-MATE-1,-a,1);
         if(sc>cs){cs=sc;cb=m}
         if(sc>a)a=sc;
