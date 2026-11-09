@@ -52,70 +52,39 @@ async function autoRate(){
     +`<div class="sub">今の手番側を「自分」、反対側を「相手」として、Maiaのレートに入れました。</div>`;
 }
 
-/* 候補(期待勝率順)から最適解を選ぶ。評価がエンジン最善から tol(cp) 以上落ちる手は除く。 */
-function pickBest(rows,myElo){
-  const withCp=rows.filter(r=>r.cp!=null);
-  const engBest=withCp.length?withCp.reduce((a,b)=>b.cp>a.cp?b:a):null;
-  const tol=Math.round(Math.max(30,Math.min(200,30+(2200-myElo)*0.07)));   // レートが低いほど、評価の差を広く許す
-  const ok=rows.filter(r=>!engBest||r.cp==null||r.cp>=engBest.cp-tol);
-  const pick=ok.reduce((a,b)=>b.ew>a.ew?b:a,ok[0]);
-  return{pick,engBest,tol};
-}
-
-/* 最適解の算出: エンジンの候補を集め、評価があまり落ちない手の中から、
-   相手の応手を予想した期待勝率が最も高い手を選ぶ。許容する評価の差はレートで変える。 */
+/* 最適解の算出: レート・履歴(Maia)・Stockfish の候補・Maia の応手予想を組み合わせる。棋風は設定があるときだけ。 */
 async function autoBest(){
   const out=$("autoRes"),s=S(),err=validate(s);
   if(err){out.textContent=err;return}
   if(!legal(s).length){out.textContent="指せる手がありません";return}
   const me=s.t,fen0=toFen(s),useStyle=styleSet(me);
-  const myElo=eloVal("eloMe"),opElo=eloVal("eloOpp");
   const log=[];
   if(!$("maHist").checked){$("maHist").checked=true}
   log.push("履歴: 直近の棋譜をMaiaに渡して予想します");
-  log.push(`レート: 自分 ${myElo} / 相手 ${opElo}`);
+  log.push(`レート: 自分 ${eloVal("eloMe")} / 相手 ${eloVal("eloOpp")}`);
   log.push(useStyle?`棋風: ${colorName(me)}の設定を考慮します`:`棋風: ${colorName(me)}は未設定のため考慮しません`);
   out.textContent="最適解を計算中…";
-
-  // 候補は多めに取る(既定の2手では、並べ替えの効果がほとんど出ないため)
-  const npvSel=$("npv"),savedN=npvSel.value;
-  npvSel.value="3";
-  const savedStyle=STYLE.on;
-  if(!useStyle)STYLE.on=false;
+  const saved=STYLE.on;
   let rows=null,fail=null;
+  if(!useStyle)STYLE.on=false;
   try{rows=await humanRun()}catch(e){fail=e}
-  finally{STYLE.on=savedStyle;npvSel.value=savedN}
+  finally{STYLE.on=saved}
   if(fail){out.textContent="計算に失敗しました";return}
   if(!rows||!rows.length){
     out.innerHTML=log.map(x=>`<div class="sub">${x}</div>`).join("")
       +`<div class="sub">候補を出せませんでした。下の「対人で有利な手を探す」欄の表示を見てください。</div>`;
     return;
   }
-
-  // エンジンの最善手(評価が最も高い候補)と、許容する評価の差
-  const{pick,engBest,tol}=pickBest(rows,myElo);
-  const ct=x=>x==null?"—":(x>=0?"+":"")+(x/100).toFixed(2);
-
-  const lines=[...log];
-  if(engBest)lines.push(`エンジンの最善手: ${engBest.sn}(評価 ${ct(engBest.cp)})`);
-  lines.push(`評価の許容範囲: 最善手から ${tol}cp 以内(レートから決めています)`);
-  let note;
-  if(!engBest)note="評価が出ていないため、期待勝率だけで選びました";
-  else if(pick===engBest)note="エンジンの最善手と同じ手です。ほかの候補は、評価の差が許容範囲を超えるか、相手の応手に対する期待勝率が低いためです";
-  else note=`エンジンの最善手より評価は ${ct(pick.cp-engBest.cp)} ですが、相手の応手を予想すると期待勝率が高くなります`;
-
-  autoPick=pick.m||null;autoPickFen=fen0;
-  if(mode==="play")drawArrows();
-
-  out.innerHTML=lines.map(x=>`<div class="sub">${x}</div>`).join("")
-    +`<div class="res" style="margin-top:6px"><b>最適解: ★${pick.sn}</b> <span class="tag mh">期待勝率 ${Math.round(pick.ew*100)}%</span> <span class="sub">評価 ${ct(pick.cp)}</span></div>`
-    +`<div class="sub">${note}。矢印(黄色)が最適解です。</div>`
-    +(pick.top?`<div class="sub">相手の予想応手: ${pick.top}(${Math.round(pick.pTop*100)}%)</div>`:"")
+  const top=rows[0];
+  const list=rows.slice(0,3).map((x,i)=>`<div class="sub">${i+1}. ${x.sn} ／ 期待勝率 ${Math.round(x.ew*100)}%${x.top?` ／ 相手の予想応手 ${x.top}`:""}</div>`).join("");
+  out.innerHTML=log.map(x=>`<div class="sub">${x}</div>`).join("")
+    +`<div class="res" style="margin-top:6px"><b>最適解: ★${top.sn}</b> <span class="tag mh">期待勝率 ${Math.round(top.ew*100)}%</span></div>`
+    +list
     +`<div class="row" style="margin-top:6px"><button id="autoPlay" class="go">この手を指す</button></div>`;
   const btn=$("autoPlay");
   if(btn)btn.onclick=()=>{
     if(toFen(S())!==fen0){msg("局面が変わったため、もう一度算出してください");return}
-    if(pick.m)doMove(pick.m);
+    if(top.m)doMove(top.m);
   };
 }
 
