@@ -83,46 +83,68 @@ function evalParts(s){
 }
 /* ---------- 先読み(将来の予測) ---------- */
 const FW={key:null,sf:null,sfD:0,se:null,seD:0,maia:null,busy:false,err:""};
-async function fwRun(){
+let fwTok=0;
+const wpct=cp=>Math.round(100/(1+Math.pow(10,-cp/400)));   // 白視点のcp → 白の勝ちやすさ(%)
+/* エンジン評価(Stockfish・自作)を、この局面について取る。withMaia なら Maia も。 */
+async function fwRun(withMaia=false){
+  const tk=++fwTok;
   const s=S(),err=validate(s);if(err)return;
   const key=rkey(s),ms=legal(s),t=+($("gaT")?$("gaT").value:1000)||1000;
-  Object.assign(FW,{key,sf:null,se:null,maia:null,busy:true,err:""});renderEval();
-  if(!ms.length){FW.busy=false;renderEval();return}
-  SEARCH_HIST=histKeys();
-  const r=search(s,ms,250,6);FW.se=(s.t==="w"?1:-1)*Math.max(-3000,Math.min(3000,r.score));FW.seD=r.depth;renderEval();
-  try{
-    if($("useSF").checked){
-      const w=await sfLoad();
-      if(w){const L=await sfBest(w,s,ms,ms,t,1,"fw");if(FW.key===key&&L.length){FW.sf=(s.t==="w"?1:-1)*cpOf(L[0].sc);FW.sfD=L[0].dep}}
-    }
-  }catch(e){FW.err="Stockfishを読み込めませんでした"}
-  renderEval();
-  try{
-    const L=await maiaPredict(s,eloVal("eloMe"),eloVal("eloOpp"),5,null,priorFens("me"));
-    if(FW.key===key)FW.maia=s.t==="w"?L.wp:1-L.wp;
-  }catch(e){FW.err=(FW.err?FW.err+" / ":"")+"Maiaを読み込めませんでした"}
-  FW.busy=false;renderEval();
+  const reuse=FW.key===key&&FW.se!=null&&!FW.busy;   // エンジンは計算済み。Maiaだけ足す
+  if(!reuse){
+    Object.assign(FW,{key,sf:null,se:null,sfD:0,seD:0,maia:null,busy:true,err:""});renderEval();
+    if(!ms.length){FW.busy=false;renderEval();return}
+    SEARCH_HIST=histKeys();
+    const r=search(s,ms,250,6);
+    if(tk!==fwTok)return;
+    FW.se=(s.t==="w"?1:-1)*Math.max(-3000,Math.min(3000,r.score));FW.seD=r.depth;renderEval();
+    try{
+      if($("useSF").checked){
+        const w=await sfLoad();
+        if(tk!==fwTok)return;
+        if(w){const L=await sfBest(w,s,ms,ms,t,1,"fw");if(tk===fwTok&&L.length){FW.sf=(s.t==="w"?1:-1)*cpOf(L[0].sc);FW.sfD=L[0].dep}}
+      }
+    }catch(e){if(tk===fwTok)FW.err="Stockfishを読み込めませんでした"}
+    if(tk!==fwTok)return;
+  }
+  if(withMaia){
+    FW.busy=true;renderEval();
+    try{
+      const L=await maiaPredict(s,eloVal("eloMe"),eloVal("eloOpp"),5,null,priorFens("me"));
+      if(tk===fwTok&&FW.key===key)FW.maia=s.t==="w"?L.wp:1-L.wp;
+    }catch(e){if(tk===fwTok)FW.err=(FW.err?FW.err+" / ":"")+"Maiaを読み込めませんでした"}
+  }
+  if(tk===fwTok){FW.busy=false;renderEval()}
 }
 function renderEval(){
   const e=$("evalBox");if(!e||curTab!=="ev")return;
   const s=S(),v=evalParts(s),f=x=>(x>=0?"+":"")+x.toFixed(2);
   const bar=x=>x==null?'<span class="evbar"></span>':`<span class="evbar"><i class="${x<0?"neg":""}" style="${x<0?"right":"left"}:50%;width:${Math.min(50,Math.abs(x)*10)}%"></i></span>`;
   const row=(n,x,txt,bd)=>`<div class="ev"><span>${bd?"<b>"+n+"</b>":n}</span>${bar(x)}<b>${txt!=null?txt:x==null?"—":f(x)}</b></div>`;
-  const wp=Math.round(100/(1+Math.pow(10,-v.total/4)));
   const fw=FW.key===rkey(s)?FW:null;
+  // 形勢タブを開いた時点で、この局面のエンジン評価を自動で取る(Maiaは含めない)
+  if(!fw&&!validate(s)&&legal(s).length){fwRun(false);return}
   const cp=x=>x==null?null:Math.abs(x)>=3000?(x>0?"詰み勝ち":"詰み負け"):f(x/100);
-  e.innerHTML='<div class="sub"><b>現在の状態(盤面だけを見た簡易計算)</b></div>'
+  const eng=fw&&fw.sf!=null?fw.sf:fw&&fw.se!=null?fw.se:null;
+  const engName=fw&&fw.sf!=null?"Stockfish":"自作エンジン";
+  const head=eng!=null
+    ?`<div class="evHead"><b>${engName}の評価(白視点)</b> <b>${cp(eng)}</b> ／ 白の勝ちやすさ ${Math.abs(eng)>=3000?(eng>0?100:0):wpct(eng)}%</div>`
+    :`<div class="sub"><b>エンジンの評価</b>: ${fw&&fw.busy?"計算中…":(fw&&fw.err)||"この局面では出せません(終局など)"}</div>`;
+  const wp=Math.round(100/(1+Math.pow(10,-v.total/4)));
+  e.innerHTML='<div class="sub">'+phaseLine(s,v)+'</div>'
+    +head
+    +'<div class="sub" style="margin-top:6px"><b>エンジンの内訳</b></div>'
+    +row("Stockfish"+(fw&&fw.sfD?`(深さ${fw.sfD})`:""),fw&&fw.sf!=null?fw.sf/100:null,fw&&fw.sf!=null?cp(fw.sf):null)
+    +row("自作エンジン"+(fw&&fw.seD?`(深さ${fw.seD})`:""),fw&&fw.se!=null?fw.se/100:null,fw&&fw.se!=null?cp(fw.se):null)
+    +row("Maia(人間の勝率・白視点)",fw&&fw.maia!=null?(fw.maia-0.5)*10:null,fw&&fw.maia!=null?Math.round(fw.maia*100)+"%":null)
+    +`<div class="row"><button id="fwGo">Maiaも含めて更新</button><span class="sub">${fw&&fw.busy?"計算中…":""}${fw&&fw.err?fw.err:""}</span></div>`
+    +'<div class="sub" style="margin-top:8px"><b>簡易計算(盤面だけ・参考)</b></div>'
     +row("駒の価値",v.mat)+row("駒の働き",v.act)+row("キングの安全",v.king)+row("ポーン構造",v.pawn)
     +row("空間",v.space)+row("連携(守り)",v.coord)+row("攻撃の機会",v.threat)+row("終盤のキング",v.kact,v.eg>0?null:"—")
     +row("総合",v.total,null,true)
-    +`<div class="wbar"><i style="width:${wp}%"></i><u></u></div><div class="sub">白の勝ちやすさの目安 ${wp}%(黒 ${100-wp}%)</div>`
+    +`<div class="wbar"><i style="width:${wp}%"></i><u></u></div><div class="sub">簡易計算での白の勝ちやすさ ${wp}%</div>`
     +`<div class="sub">取られそうな駒(守りなし): 白 ${v.hang.w.join(" ")||"なし"} / 黒 ${v.hang.b.join(" ")||"なし"}</div>`
-    +'<div class="sub" style="margin-top:8px"><b>先読み(数手先・人間の見込み)</b></div>'
-    +row("Stockfish"+(fw&&fw.sfD?`(深さ${fw.sfD})`:""),fw&&fw.sf!=null?fw.sf/100:null,fw?cp(fw.sf):null)
-    +row("自作エンジン"+(fw&&fw.seD?`(深さ${fw.seD})`:""),fw&&fw.se!=null?fw.se/100:null,fw?cp(fw.se):null)
-    +row("Maiaの勝率(白視点)",fw&&fw.maia!=null?(fw.maia-0.5)*10:null,fw&&fw.maia!=null?Math.round(fw.maia*100)+"%":null)
-    +`<div class="row"><button id="fwGo">先読みを更新</button><span class="sub">${fw&&fw.busy?"計算中…":""}${fw&&fw.err?fw.err:""}</span></div>`
-    +'<div class="sub">上の「現在の状態」は、自作の簡易計算です。駒の取り合いなどの戦術は読みません。「先読み」は、実際に探索や予測を行った結果で、プラスは白有利です。</div>';
+    +evalGraph();
 }
 
 /* ---------- 棋譜の再生 ---------- */
@@ -141,7 +163,7 @@ $("rpPlay").onclick=()=>{
 };
 $("rpFirst").onclick=()=>{rpStop();pos=0;reset()};
 $("rpLast").onclick=()=>{rpStop();pos=hist.length-1;reset()};
-$("evalBox").addEventListener("click",e=>{if(e.target.id==="fwGo")fwRun()});
+$("evalBox").addEventListener("click",e=>{if(e.target.id==="fwGo")fwRun(true)});
 
 /* ---------- 棋譜の解析・分類・重要局面 ---------- */
 const GA=new Map(),GM=new Map();let gaTok=0;
@@ -158,7 +180,7 @@ function rvCfg(){
   return{big:n("rvBig",1.5)*100,top:n("rvMaiaTop",30)/100,pl:n("rvMaiaPl",10)/100,
     c:[1,2,3,4].map(k=>$("rvC"+k).checked)};
 }
-async function gaRun(){
+async function gaRun(withMaia=true){
   const tk=++gaTok,t=+$("gaT").value,b=gaBase(),n=hist.length-b;
   for(let k=0;k<n;k++){
     if(tk!==gaTok)return;
@@ -170,7 +192,7 @@ async function gaRun(){
       renderReview();
     }
   }
-  if($("rvMaia").checked){
+  if(withMaia&&$("rvMaia").checked){
     for(let i=b+1;i<hist.length;i++){
       if(tk!==gaTok)return;
       const a=hist[i-1].s,mv=rvMove(i);if(!mv)continue;
@@ -305,16 +327,17 @@ async function humanRun(){
   for(let k=0;k<cands.length;k++){
     out.textContent=`相手の応手を予想中… ${k+1}/${cands.length}(初回はMaiaの読み込みで時間がかかります)`;
     const c=cands[k],ns=make(s,c.m),sn=san(s,c.m);
-    if(!legal(ns).length){rows.push({sn,cp:c.cp,ew:sn.endsWith("#")?1:0.5,end:true});continue}
+    if(!legal(ns).length){rows.push({m:c.m,sn,cp:c.cp,ew:sn.endsWith("#")?1:0.5,end:true});continue}
     let L;try{L=await maiaPredict(ns,op,me,5,null,priorFens("after"))}catch(e){out.textContent="Maiaを読み込めませんでした: "+(e&&e.message||e);return}
     const P=L.reduce((a,x)=>a+x.p,0)||1,ow=L.reduce((a,x)=>a+x.p*x.win,0)/P;
     const br=L.reduce((a,x)=>x.win>a.win?x:a,L[0]),tp=L.reduce((a,x)=>x.p>a.p?x:a,L[0]);
-    rows.push({sn,cp:c.cp,ew:1-ow,top:san(ns,tp.m),pTop:tp.p/P,bst:san(ns,br.m),pBest:br.p/P});
+    rows.push({m:c.m,sn,cp:c.cp,ew:1-ow,top:san(ns,tp.m),pTop:tp.p/P,bst:san(ns,br.m),pBest:br.p/P});
   }
   rows.sort((a,b)=>b.ew-a.ew);
   const ct=x=>x==null?"—":(x>=0?"+":"")+(x/100).toFixed(2);
   out.innerHTML=rows.map((x,i)=>`<div class="res"><b>${i===0?"★ ":""}${x.sn}</b> <span class="tag mh">期待勝率 ${Math.round(x.ew*100)}%</span><br><small>エンジン評価 ${ct(x.cp)}(手番側から見て)${x.end?" / 対局が終わる手です":` / 相手の予想応手 ${x.top}(${Math.round(x.pTop*100)}%) / Maiaが相手に最も有利と見る応手 ${x.bst} を選ぶ確率 ${Math.round(x.pBest*100)}%`}</small></div>`).join("")
     +`<div class="sub">★は、あなた(${me})が相手(${op})に対して期待勝率が最も高い手です。エンジン評価が大きく下がる手を選ぶときは、見比べてください。</div>`;
+  return rows;
 }
 $("huGo").onclick=()=>{humanRun()};
 

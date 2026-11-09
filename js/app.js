@@ -59,7 +59,7 @@ function render(){
   const fls=[...F].map((x,i)=>`<div>${flipped?F[7-i]:x}</div>`).join(""),rks=[8,7,6,5,4,3,2,1].map(x=>`<div>${flipped?9-x:x}</div>`).join("");
   $("fl").innerHTML=fls;$("ft").innerHTML=fls;$("rr").innerHTML=rks;
   if(mode==="play")drawArrows();
-  let st=`手番:${s.t==="w"?"白":"黒"}`;
+  let st=`第${pos}手目 ／ 手番:${s.t==="w"?"白":"黒"}`;
   if(err)st+=" ／ "+err;
   else{
     const n=legal(s).length,c=inCheck(s,s.t==="w");

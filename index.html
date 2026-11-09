@@ -33,6 +33,13 @@
   </div>
   <div class="tab" data-t="ana">
   <div class="card">
+    <h2>おまかせ</h2>
+    <div class="row"><button id="autoRate">レートを自動算出(エンジンで解析)</button><button id="autoGo" class="go">最適解を算出</button></div>
+    <div id="autoRes" style="margin-top:6px"></div>
+    <div class="sub">「レートを自動算出」は、この棋譜の全手をエンジンで解析し、平均損失から目安のレートを入れます(復習タブの解析と同じ結果を使います)。「最適解を算出」は、レート・履歴(Maiaに渡す)・Stockfishの候補・Maiaの応手予想を組み合わせ、期待勝率の高い手を出します。棋風は、棋風タブで設定されているときだけ考慮します。手は自動では指しません。</div>
+  </div>
+
+  <div class="card">
     <h2>最善手(手番側 = 自分、反対側 = 相手)</h2>
     <div class="row">
       <button id="aMe">自分</button><button id="aOpp">相手</button><button id="aBoth">両方</button>
@@ -115,6 +122,7 @@
   </div>
   </div>
   <div class="tab" data-t="st" hidden>
+  <div class="row"><button id="stSwap">白と黒の棋風を入れ替え</button></div>
   <div id="styleMount"></div>
   </div>
   <div class="tab" data-t="set" hidden>
@@ -153,5 +161,6 @@
 <script src="js/review.js"></script>
 <script src="js/kifu.js"></script>
 <script src="js/style.js"></script>
+<script src="js/auto.js"></script>
 </body>
 </html>
