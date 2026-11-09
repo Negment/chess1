@@ -40,6 +40,6 @@ npm test
 
 echo ""
 echo "OKなら、次でコミットします:"
-echo "  git add -A && git commit -m \"feat: 形勢にエンジン評価・おまかせ(レート算出/最適解)・棋風の入れ替え\""
+echo "  git add index.html package.json js css test .github"
 echo "戻したい時は(このブランチの変更を捨てて main に戻る):"
-echo "  git checkout -- . && rm -f js/auto.js test/auto.test.js test/globals.test.js && git checkout main"
+echo "  git checkout -- . && rm -f js/auto.js test/auto.test.js test/globals.test.js test/search.test.js && git checkout main"
