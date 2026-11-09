@@ -162,11 +162,11 @@ async function best(s){
 }
 
 /* ---------- Maia(人間らしい手) ---------- */
-// maia3-js を engines/maia/ に置く。ファイル名が違う場合は module をそれに合わせる。
+// maia3-js(コード)だけを engines/maia/ に置く。モデル重みは配布しない。
 const MAIA_CFG={
   module:null,                    // null なら engines/maia/package.json の exports["./web"] から自動で探す
   variant:"5m",                   // 5m は npm パッケージに同梱
-  models:{"23m":"engines/maia/maia3_23m.onnx"}   // 自分のリポジトリに置いたモデル(ファイルがなければ自動取得に戻る)
+  models:{}                       // 重みはリポジトリに置かない。パッケージ既定の Hugging Face(cemoss17/maia3-onnx)から読む
 };
 let maia=null,maP=null;
 function maiaVariant(){MAIA_CFG.variant=$("maVar").value;maia=null;setSt("maSt","未起動(選択: "+MAIA_CFG.variant+")")}
