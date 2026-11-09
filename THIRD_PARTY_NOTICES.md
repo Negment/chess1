@@ -18,14 +18,13 @@
 - **元になっている研究コード**: CSSLab の Maia3 本体(`CSSLab/maia3`)は **GNU AGPL-3.0**、研究用の `CSSLab/maia-chess` は **GNU GPL-3.0** です(公式リポジトリのLICENSEを確認済み)。
 - **要確認**: `maia3-js` が、これらのコードを元にした派生物かどうかは確認できていません。派生物なら、MITで配布してよいかが問題になります。作者への確認か、法的な確認が必要です。
 
-## 3. Maia3 のモデル重み
+## 3. Maia3 のモデル重み(配布しない)
 
-- **場所**: `engines/maia/models/maia3_5m.onnx`、`engines/maia/maia3_23m.onnx`(同梱)、79M版は初回に外部から取得
-- **配布元**: Hugging Face の `UofTCSSLab/Maia3-5M`、`UofTCSSLab/Maia3-23M`、`UofTCSSLab/Maia3-79M`
-- **ライセンス(配布元のモデルカードの記載)**:
-  - 5M・23M: 「License: CC BY 4.0 (paper); see repo for code/weights license」。論文はCC BY 4.0ですが、重みの条件は明記されていません。リポジトリを参照するよう書かれていて、そのリポジトリにも重みの条件は見当たりません。**同梱の重みのライセンスは、未確定です。**
-  - 79M: 「AGPLv3」(モデルカードの記載)。同梱していませんが、利用するなら、AGPL-3.0の条件を確認する必要があります。
-- **注意**: 5M・23Mを同梱したまま公開するのは、重みの条件が確定するまで避けるのが安全です。
+- **このプロジェクトは、モデル重みを配布しません。** リポジトリにも、Pagesにも置きません。
+- **読み込み先**: アプリは、`maia3-js` の既定の取得先(Hugging Face の `cemoss17/maia3-onnx`)から、利用者のブラウザが直接読み込みます。ファイル名は `maia3_5m.onnx`、`maia3_23m.onnx`、`maia3_79m.onnx` です。
+- **元の研究**: Maia3 の重みは、UofTCSSLab(Hugging Face の `UofTCSSLab/Maia3-5M` ほか)が公開しています。モデルカードには「License: CC BY 4.0 (paper); see repo for code/weights license」とあり、重みの条件は明記されていません。79Mのカードは「AGPLv3」です。
+- **未確認の点**: 取得元の `cemoss17/maia3-onnx` は、研究グループのアカウントではありません。そのリポジトリのライセンスは、確認できていません。利用者が自分で取得する形なので、このプロジェクトが配布する形にはなりません。
+- **利用者への注意**: Maia3 の重みを使う場合は、上の配布元の条件を、利用者自身で確認してください。
 
 ## 4. chess.js
 
