@@ -52,39 +52,89 @@ async function autoRate(){
     +`<div class="sub">今の手番側を「自分」、反対側を「相手」として、Maiaのレートに入れました。</div>`;
 }
 
-/* 最適解の算出: レート・履歴(Maia)・Stockfish の候補・Maia の応手予想を組み合わせる。棋風は設定があるときだけ。 */
+/* 点数の合成(純粋な計算)。ev は手番側から見た評価(cp)、style は棋風の点数(-1〜1 の目安)。
+   棋風は、設定されているときだけ、kappa(cp/単位)で小さく加える。 */
+const STYLE_KAPPA=20;
+function scoreMoves(list,styleOn,kappa=STYLE_KAPPA){
+  return list.map(x=>({...x,total:x.ev+(styleOn&&x.style?kappa*x.style:0)}))
+             .sort((a,b)=>b.total-a.total);
+}
+
+/* 最適解の算出:
+   点数(候補m) = Σ 相手の応手r × P_Maia(r | 相手のレート) × Stockfishの評価(mの後にrを指した局面、手番側から)
+   Maiaの勝率は使わない。Maiaは「相手が何を指すか」の確率だけ出す。 */
 async function autoBest(){
   const out=$("autoRes"),s=S(),err=validate(s);
   if(err){out.textContent=err;return}
   if(!legal(s).length){out.textContent="指せる手がありません";return}
-  const me=s.t,fen0=toFen(s),useStyle=styleSet(me);
+  const me=s.t,op=me==="w"?"b":"w",fen0=toFen(s),useStyle=styleSet(me);
+  const myElo=eloVal("eloMe"),opElo=eloVal("eloOpp");
+  const ct=x=>x==null?"—":(x>=0?"+":"")+(x/100).toFixed(2);
   const log=[];
   if(!$("maHist").checked){$("maHist").checked=true}
-  log.push("履歴: 直近の棋譜をMaiaに渡して予想します");
-  log.push(`レート: 自分 ${eloVal("eloMe")} / 相手 ${eloVal("eloOpp")}`);
-  log.push(useStyle?`棋風: ${colorName(me)}の設定を考慮します`:`棋風: ${colorName(me)}は未設定のため考慮しません`);
-  out.textContent="最適解を計算中…";
-  const saved=STYLE.on;
-  let rows=null,fail=null;
-  if(!useStyle)STYLE.on=false;
-  try{rows=await humanRun()}catch(e){fail=e}
-  finally{STYLE.on=saved}
-  if(fail){out.textContent="計算に失敗しました";return}
-  if(!rows||!rows.length){
-    out.innerHTML=log.map(x=>`<div class="sub">${x}</div>`).join("")
-      +`<div class="sub">候補を出せませんでした。下の「対人で有利な手を探す」欄の表示を見てください。</div>`;
+  log.push("履歴: 直近の棋譜をMaiaに渡して、相手の応手を予想します");
+  log.push(`レート: 自分 ${myElo} / 相手 ${opElo}(相手の応手の確率に使います)`);
+  log.push(useStyle?`棋風: ${colorName(me)}の設定を、点数の小さな補正に使います`:`棋風: ${colorName(me)}は未設定のため使いません`);
+  out.textContent="候補を計算中…";
+
+  // 1. 候補手(エンジン。最大3手)
+  const npvSel=$("npv"),savedN=npvSel.value;
+  npvSel.value="3";
+  let r=null;
+  try{r=await best(s)}
+  catch(e){if(e===ABORT){return}}
+  finally{npvSel.value=savedN}
+  if(!r||!r.m){out.textContent="候補を出せませんでした";return}
+  const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))].slice(0,3);
+
+  // 2. 各候補について、相手の応手の確率で重みづけしたStockfish評価を出す
+  const t=Math.min(+$("tl").value,1000);   // 1局面あたりの時間(長くなりすぎないよう上限を付ける)
+  const rows=[];
+  try{
+    for(let k=0;k<cands.length;k++){
+      if(toFen(S())!==fen0)return;          // 途中で局面が変わったら止める
+      const c=cands[k],ns=make(s,c.m),sn=san(s,c.m);
+      out.textContent=`相手の応手を予想し、評価しています… ${k+1}/${cands.length}`;
+      if(!legal(ns).length){
+        rows.push({m:c.m,sn,ev:inCheck(ns,ns.t==="w")?3000:0,top:null,pTop:0});
+        continue;
+      }
+      const L=await maiaPredict(ns,opElo,myElo,5,null,priorFens("after"));
+      const P=L.reduce((a,x)=>a+x.p,0)||1;
+      let ev=0;
+      for(const x of L){
+        const e=await evalPos(make(ns,x.m),t);   // 相手が手を指した後の局面。相手の手番から見た値
+        ev+=(x.p/P)*(-e.cp);                      // 手番側(自分)の視点に直す
+      }
+      const tp=L.reduce((a,x)=>x.p>a.p?x:a,L[0]);
+      rows.push({m:c.m,sn,ev,top:san(ns,tp.m),pTop:tp.p/P});
+    }
+  }catch(e){
+    if(e===ABORT)return;
+    out.textContent="計算に失敗しました: "+(e&&e.message||e);
     return;
   }
-  const top=rows[0];
-  const list=rows.slice(0,3).map((x,i)=>`<div class="sub">${i+1}. ${x.sn} ／ 期待勝率 ${Math.round(x.ew*100)}%${x.top?` ／ 相手の予想応手 ${x.top}`:""}</div>`).join("");
+
+  // 3. 棋風(設定があるときだけ)
+  const cfg=me==="w"?STYLE.w:STYLE.b;
+  const ctx={prevTo:pos>0&&hist[pos-1].mv?hist[pos-1].mv.t:-1};
+  const withStyle=rows.map(x=>{const st=useStyle?stScore(s,x.m,cfg,ctx):{score:0,why:""};return{...x,style:st.score,why:st.why}});
+  const ranked=scoreMoves(withStyle,useStyle);
+  const pick=ranked[0];
+
+  // 4. 表示
   out.innerHTML=log.map(x=>`<div class="sub">${x}</div>`).join("")
-    +`<div class="res" style="margin-top:6px"><b>最適解: ★${top.sn}</b> <span class="tag mh">期待勝率 ${Math.round(top.ew*100)}%</span></div>`
-    +list
+    +`<div class="res" style="margin-top:6px"><b>最適解: ★${pick.sn}</b> <span class="tag mh">点数 ${ct(pick.total)}</span></div>`
+    +ranked.map((x,i)=>`<div class="sub">${i+1}. ${x.sn}: 点数 ${ct(x.total)}(Stockfishの平均 ${ct(x.ev)}${x.top?` / 相手の予想応手 ${x.top}(${Math.round(x.pTop*100)}%)`:""})${useStyle&&x.why?" / 棋風: "+x.why:""}</div>`).join("")
+    +`<div class="sub">点数は、相手の応手を確率で重みづけした、その後の局面のStockfish評価の平均です。黄色の矢印が最適解です。</div>`
     +`<div class="row" style="margin-top:6px"><button id="autoPlay" class="go">この手を指す</button></div>`;
+
+  autoPick=pick.m||null;autoPickFen=fen0;
+  if(mode==="play")drawArrows();
   const btn=$("autoPlay");
   if(btn)btn.onclick=()=>{
     if(toFen(S())!==fen0){msg("局面が変わったため、もう一度算出してください");return}
-    if(top.m)doMove(top.m);
+    if(pick.m)doMove(pick.m);
   };
 }
 
