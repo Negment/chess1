@@ -313,6 +313,8 @@ function nm(s,d,a,b,ply){
   if((d<=0&&!ic)||ply>32)return qs(s,a,b,ply);
   const ms=legal(s);
   if(!ms.length)return ic?-(MATE-ply):0;
+  // 応手が1手しかない強制手は、読みを1手延ばす(探索の数はほとんど増えない)
+  if(ms.length===1&&ply<32)d++;
 
   const key=hashKey(s),te=TT.get(key);
   const ttm=te?te.m:null;
