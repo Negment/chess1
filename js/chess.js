@@ -42,6 +42,9 @@ function fenProblems(s){
   if(!(s.h>=0)||!(s.n>=1))return "手数の値が不正です";
   return "";
 }
+/* ルールの設定。OFFのとき、キャスリングやアンパッサンは一切起きない(既定は標準どおり両方ON) */
+const RULES={castle:true,ep:true};
+
 function parseFen(f){
   const p=f.trim().split(/\s+/),b=[];
   if(p.length<2||p.length>6)throw new Error("FENの項目数が合いません(盤面・手番・キャスリング・アンパッサン・半手数・手数)");
@@ -60,7 +63,7 @@ function parseFen(f){
   if(p[2]&&!/^(-|[KQkq]{1,4})$/.test(p[2]))throw new Error("FENのキャスリング欄が不正です");
   if(p[3]&&!/^(-|[a-h][36])$/.test(p[3]))throw new Error("FENのアンパッサン欄が不正です");
   if((p[4]&&!/^\d+$/.test(p[4]))||(p[5]&&!/^[1-9]\d*$/.test(p[5])))throw new Error("FENの手数欄が不正です");
-  const s=norm({b,t:p[1],c:p[2]&&p[2]!=="-"?p[2]:"",e:p[3]&&p[3]!=="-"?nameSq(p[3]):-1,h:+p[4]||0,n:+p[5]||1});
+  const s=norm({b,t:p[1],c:RULES.castle&&p[2]&&p[2]!=="-"?p[2]:"",e:RULES.ep&&p[3]&&p[3]!=="-"?nameSq(p[3]):-1,h:+p[4]||0,n:+p[5]||1});
   const pr=fenProblems(s);if(pr)throw new Error("FENが不正です: "+pr);
   return s;
 }
@@ -105,7 +108,7 @@ function pseudo(s){
       for(const dc of[-1,1]){
         const cc=c+dc;if(cc<0||cc>7)continue;
         const t=r1*8+cc,q=b[t];
-        if((q&&isW(q)!==w)||t===s.e){if(r1===last)for(const x of"qrbn")add(t,x);else add(t)}
+        if((q&&isW(q)!==w)||(RULES.ep&&t===s.e)){if(r1===last)for(const x of"qrbn")add(t,x);else add(t)}
       }
     }else if(u==="N"||u==="K"){
       for(const[dr,dc]of u==="N"?NN:KK){
@@ -115,8 +118,8 @@ function pseudo(s){
       }
       if(u==="K"&&i===(w?60:4)&&!inCheck(s,w)){
         const base=i,ks=w?"K":"k",qs=w?"Q":"q";
-        if(s.c.includes(ks)&&!b[base+1]&&!b[base+2]&&!attacked(b,base+1,!w)&&!attacked(b,base+2,!w))add(base+2);
-        if(s.c.includes(qs)&&!b[base-1]&&!b[base-2]&&!b[base-3]&&!attacked(b,base-1,!w)&&!attacked(b,base-2,!w))add(base-2);
+        if(RULES.castle&&s.c.includes(ks)&&!b[base+1]&&!b[base+2]&&!attacked(b,base+1,!w)&&!attacked(b,base+2,!w))add(base+2);
+        if(RULES.castle&&s.c.includes(qs)&&!b[base-1]&&!b[base-2]&&!b[base-3]&&!attacked(b,base-1,!w)&&!attacked(b,base-2,!w))add(base-2);
       }
     }else{
       for(const[dr,dc]of u==="B"?DG:u==="R"?RK:DG.concat(RK)){
@@ -136,7 +139,7 @@ function make(s,m){
   let e=-1,c=s.c;
   b[m.t]=m.pr?(w?m.pr.toUpperCase():m.pr):p;b[m.f]="";
   if(u==="P"&&m.t===s.e&&!cap)b[m.t+(w?8:-8)]="";
-  if(u==="P"&&Math.abs(m.t-m.f)===16)e=(m.f+m.t)/2;
+  if(u==="P"&&Math.abs(m.t-m.f)===16&&RULES.ep)e=(m.f+m.t)/2;
   if(u==="K"&&Math.abs(m.t-m.f)===2){
     if(m.t>m.f){b[m.f+1]=b[m.f+3];b[m.f+3]=""}else{b[m.f-1]=b[m.f-4];b[m.f-4]=""}
   }
@@ -276,7 +279,7 @@ function order(s,ms,first,ply){
   };
   return ms.map(m=>[sc(m),m]).sort((a,b)=>b[0]-a[0]).map(x=>x[1]);
 }
-const keyOf=s=>s.b.map(p=>p||".").join("")+s.t+s.c;
+const keyOf=s=>s.b.map(p=>p||".").join("")+s.t+s.c+(epLegal(s)?"e"+s.e:"");   // 取れるアンパッサンだけ区別(rkey と同じ考え)
 let SEARCH_HIST=new Set(),PATHK=[];
 
 function qs(s,a,b,ply){
@@ -289,7 +292,7 @@ function qs(s,a,b,ply){
   }
   const st=ev(s);if(st>=b)return st;if(st>a)a=st;
   const cs=legal(s,true);
-  if(!cs.length&&!ic){let n=0;for(const p of s.b)if(p)n++;if(n<=8&&!legal(s).length)return 0}
+  if(!cs.length&&!ic&&!legal(s).length)return 0;   // ステイルメイト(駒の数に関係なく引き分け)
   for(const m of order(s,cs)){
     const sc=-qs(make(s,m),-b,-a,ply+1);
     if(sc>=b)return sc;if(sc>a)a=sc;

@@ -2,7 +2,7 @@
 const test=require("node:test"),assert=require("node:assert/strict");
 const {load,pick}=require("./helpers");
 const C=load(["chess.js"]);
-const E=pick(C,["parseFen","legal","make","inCheck","search","ev","hashKey","PST_MG","PST_EG","MATE"]);
+const E=pick(C,["parseFen","legal","make","inCheck","search","ev","hashKey","PST_MG","PST_EG","MATE","qs","keyOf"]);
 const {parseFen,legal,make,inCheck,search,ev,hashKey,PST_MG,PST_EG,MATE}=E;
 
 // 手番側が n 手以内に詰ませられるか(総当たり。正解の基準に使う)
@@ -61,4 +61,22 @@ test("局面の鍵: 手番・キャスリング権・アンパッサンの違い
   const a=hashKey(parseFen(base+" w K - 0 1")),b=hashKey(parseFen(base+" b K - 0 1")),c=hashKey(parseFen(base+" w - - 0 1"));
   assert.notEqual(a,b);assert.notEqual(a,c);
   assert.equal(hashKey(parseFen(base+" w K - 0 1")),a);   // 同じ局面は同じ鍵
+});
+
+// 探索の末端のステイルメイト: 駒が多くても引き分けにする(以前は駒8枚以下の時だけだった)
+test("駒が多い局面でも、末端のステイルメイトは0(引き分け)",()=>{
+  const s=parseFen("k7/2Q5/1K6/8/8/8/PPPPPP2/7R b - - 0 1");   // 駒10枚、黒は手がなく王手もない
+  assert.equal(legal(s).length,0);
+  assert.equal(E.qs(s,-99999,99999,0),0);
+});
+// 探索用の鍵: 取れるアンパッサンだけ区別する(取れないなら欄が無いのと同じ)
+test("探索用の鍵: 取れないアンパッサンは同じ、取れるなら違う",()=>{
+  const k=E.keyOf;
+  const cap=parseFen("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1");     // 黒のd4ポーンがe3で取れる
+  const capNone=parseFen("4k3/8/8/8/3pP3/8/8/4K3 b - - 0 1");
+  assert.notEqual(k(cap),k(capNone));
+  // 白のe4ポーンはあるが、取る黒のポーンがいない → 取れないので欄は区別しない
+  const noCap=parseFen("4k3/8/8/8/4P3/8/8/4K3 b - e3 0 1");
+  const noCapNone=parseFen("4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
+  assert.equal(k(noCap),k(noCapNone));
 });

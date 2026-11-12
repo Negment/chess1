@@ -127,6 +127,12 @@
   </div>
   <div class="tab" data-t="set" hidden>
   <div class="card">
+    <h2>ルール</h2>
+    <div class="row"><label><input type="checkbox" id="ruleCastle" checked>キャスリングを使う</label>
+    <label><input type="checkbox" id="ruleEP" checked>アンパッサンを使う</label></div>
+    <div class="sub">オフにすると、以後の局面では、その手は指せなくなります。標準以外のルールでは、Maiaとテーブルベースはもともと標準チェスを前提にしているので、参考程度にしてください。</div>
+  </div>
+  <div class="card">
     <h2>エンジンの状態</h2>
     <div class="row"><b>Stockfish</b><select id="sfSel"><option value="auto">自動(大きい版を優先)</option></select><button id="sfGo">起動</button></div>
     <div class="sub" id="sfSt">未起動</div>

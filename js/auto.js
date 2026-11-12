@@ -172,3 +172,21 @@ function evalGraph(){
   w("autoGo",()=>{autoBest()});
   w("stSwap",()=>swapStyle());
 }
+
+/* ルールの切り替え: 履歴の全局面に反映する(OFFのとき、キャスリング権とアンパッサン欄を消す) */
+function applyRules(){
+  RULES.castle=!!$("ruleCastle")?.checked;
+  RULES.ep=!!$("ruleEP")?.checked;
+  for(const h of hist){
+    let c=h.s.c,e=h.s.e;
+    if(!RULES.castle)c="";
+    if(!RULES.ep)e=-1;
+    h.s={...h.s,c,e};
+  }
+  if(typeof render==="function")render();
+}
+{
+  const w=(id,fn)=>{const el=document.getElementById(id);if(el)el.onchange=fn};
+  w("ruleCastle",()=>applyRules());
+  w("ruleEP",()=>applyRules());
+}
