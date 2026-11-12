@@ -306,7 +306,11 @@ function nm(s,d,a,b,ply){
   let rk=null;
   if(s.h>=4){rk=keyOf(s);if(SEARCH_HIST.has(rk)||PATHK.includes(rk))return 0}
   const w=s.t==="w",ic=inCheck(s,w);
-  if((d<=0&&!ic)||ply>24)return qs(s,a,b,ply);
+  // 詰みの距離による枝刈り: 今より長い詰みは、読んでも結果が変わらない
+  a=Math.max(a,-MATE+ply);b=Math.min(b,MATE-ply-1);
+  if(a>=b)return a;
+  // 王手の延長は、測定で効果がなく深さが落ちたので入れていない
+  if((d<=0&&!ic)||ply>32)return qs(s,a,b,ply);
   const ms=legal(s);
   if(!ms.length)return ic?-(MATE-ply):0;
 
@@ -321,7 +325,7 @@ function nm(s,d,a,b,ply){
 
   PATHK.push(rk);
   try{
-    // null move: 手番を渡しても b 以上なら、この枝は切ってよい(持ち駒の少ない局面では使わない)
+    // null move: 手番を渡しても b 以上なら、この枝は切ってよい
     if(!ic&&d>=3&&ply>0&&hasMajor(s)){
       const R=d>=6?3:2;
       const ns={...s,t:w?"b":"w",e:-1,h:s.h+1};
@@ -334,11 +338,17 @@ function nm(s,d,a,b,ply){
     for(let i=0;i<ord.length;i++){
       const m=ord[i];
       const quiet=!s.b[m.t]&&!m.pr&&!(s.b[m.f].toUpperCase()==="P"&&m.t===s.e);
-      // 後ろの静かな手は浅く読み、良さそうなら読み直す(LMR)
-      const late=i>=3&&d>=3&&quiet&&!ic;
+      const late=i>=3&&d>=3&&quiet&&!ic;     // 後ろの静かな手は浅く読む(LMR)
       const child=make(s,m);
-      let sc=-nm(child,late?d-2:d-1,-b,-a,ply+1);
-      if(late&&sc>a)sc=-nm(child,d-1,-b,-a,ply+1);
+      let sc;
+      if(i===0){
+        sc=-nm(child,d-1,-b,-a,ply+1);       // 最初の手は全幅
+      }else{
+        // PVS: 残りの手は狭い窓で「最善手より良いか」だけを確かめる
+        sc=late?-nm(child,d-2,-a-1,-a,ply+1):-nm(child,d-1,-a-1,-a,ply+1);
+        if(late&&sc>a)sc=-nm(child,d-1,-a-1,-a,ply+1);   // 浅く読んで良さそうなら、通常の深さで読み直す
+        if(sc>a&&sc<b)sc=-nm(child,d-1,-b,-a,ply+1);     // 良くなったので、正確な値を出す
+      }
       if(sc>best){best=sc;bm=m}
       if(sc>a)a=sc;
       if(a>=b){
@@ -351,26 +361,49 @@ function nm(s,d,a,b,ply){
         break;
       }
     }
-    const f=best<=a0?2:best>=b?1:0;   // 0=正確 1=下限(b以上) 2=上限(a以下)
+    const f=best<=a0?2:best>=b?1:0;
     if(TT.size<TT_MAX)TT.set(key,{d,s:toTT(best,ply),f,m:bm});
     return best;
   }finally{PATHK.pop()}
+}
+
+/* ルートの1回の探索。窓 [lo,hi] の中で、最善の手と点数を返す */
+function rootSearch(s,ms,first,d,lo,hi){
+  let a=lo,bestSc=-MATE-1,cb=null,i=0;
+  for(const m of order(s,ms,first,0)){
+    const child=make(s,m);
+    let sc;
+    if(i===0)sc=-nm(child,d-1,-hi,-a,1);
+    else{
+      sc=-nm(child,d-1,-a-1,-a,1);
+      if(sc>a&&sc<hi)sc=-nm(child,d-1,-hi,-a,1);
+    }
+    i++;
+    if(sc>bestSc){bestSc=sc;cb=m}
+    if(sc>a)a=sc;
+    if(a>=hi)break;
+  }
+  return{m:cb,sc:bestSc};
 }
 
 function search(s,ms,limit,maxD){
   nodes=0;tEnd=Date.now()+limit;PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
   if(TT.size>TT_MAX*0.8)TT.clear();
   KILL=[];HIST.fill(0);
-  let best=ms[0],bs=0,depth=0;
+  let best=ms[0],bs=0,depth=0,prev=0;
   try{
     for(let d=1;d<=maxD;d++){
-      let a=-MATE-1,cb=null,cs=-Infinity;
-      for(const m of order(s,ms,best,0)){
-        const sc=-nm(make(s,m),d-1,-MATE-1,-a,1);
-        if(sc>cs){cs=sc;cb=m}
-        if(sc>a)a=sc;
+      // アスピレーション窓: 4手目以降は、前の評価の周りだけを先に読む。外れたら広げて読み直す
+      let lo=-MATE-1,hi=MATE+1,res;
+      const W=d>=4?50:0;
+      if(W){lo=prev-W;hi=prev+W}
+      for(;;){
+        res=rootSearch(s,ms,best,d,lo,hi);
+        if(res.sc<=lo&&lo>-MATE-1){lo=-MATE-1;continue}
+        if(res.sc>=hi&&hi<MATE+1){hi=MATE+1;continue}
+        break;
       }
-      best=cb;bs=cs;depth=d;
+      best=res.m;bs=res.sc;depth=d;prev=bs;
       if(Math.abs(bs)>MATE-100)break;
     }
   }catch(e){if(e!=="T")throw e}
