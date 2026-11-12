@@ -388,13 +388,24 @@ function rootSearch(s,ms,first,d,lo,hi){
   return{m:cb,sc:bestSc};
 }
 
-function search(s,ms,limit,maxD){
-  nodes=0;tEnd=Date.now()+limit;PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
+/* 次の深さを始めてよいか。直前の深さの時間から次の時間を予測し、楽観的に(0.8倍で)見積もる。
+   limit は目標の時間。実際の打ち切りはそれより猶予をもつ(search を参照)。 */
+function shouldDeepen(elapsed,last,prev,limit){
+  const ratio=prev>0?Math.min(4,Math.max(2,last/prev)):3;   // 深さが1つ増えると、時間は2〜4倍になる想定
+  return elapsed+0.8*last*ratio<=limit;
+}
+
+function search(s,ms,limit,maxD=40){
+  const t0=Date.now();
+  nodes=0;tEnd=t0+limit*1.15;          // 猶予つきの打ち切り(これを超えたら、完了していない深さは捨てる)
+  PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
   if(TT.size>TT_MAX*0.8)TT.clear();
   KILL=[];HIST.fill(0);
-  let best=ms[0],bs=0,depth=0,prev=0;
+  let best=ms[0],bs=0,depth=0,prev=0,last=0,before=0;
   try{
     for(let d=1;d<=maxD;d++){
+      if(d>1&&!shouldDeepen(Date.now()-t0,last,before,limit))break;
+      const it0=Date.now();
       // アスピレーション窓: 4手目以降は、前の評価の周りだけを先に読む。外れたら広げて読み直す
       let lo=-MATE-1,hi=MATE+1,res;
       const W=d>=4?50:0;
@@ -406,7 +417,8 @@ function search(s,ms,limit,maxD){
         break;
       }
       best=res.m;bs=res.sc;depth=d;prev=bs;
-      if(Math.abs(bs)>MATE-100)break;
+      before=last;last=Math.max(1,Date.now()-it0);
+      if(Math.abs(bs)>MATE-100)break;     // 詰みが確定したら、読むのをやめる
     }
   }catch(e){if(e!=="T")throw e}
   return {m:best,score:bs,depth};

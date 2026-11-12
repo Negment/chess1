@@ -88,7 +88,9 @@ async function autoBest(){
   const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))].slice(0,3);
 
   // 2. 各候補について、相手の応手の確率で重みづけしたStockfish評価を出す
-  const t=Math.min(+$("tl").value,1000);   // 1局面あたりの時間(長くなりすぎないよう上限を付ける)
+  // 予算: 全体で OB ミリ秒。候補ごとに残りを等分し、使い残しは次の候補に回す
+  const OB=6000;
+  let remain=OB;
   const rows=[];
   try{
     for(let k=0;k<cands.length;k++){
@@ -99,13 +101,18 @@ async function autoBest(){
         rows.push({m:c.m,sn,ev:inCheck(ns,ns.t==="w")?3000:0,top:null,pTop:0});
         continue;
       }
+      const cStart=Date.now();
+      const candBudget=remain/(cands.length-k);
       const L=await maiaPredict(ns,opElo,myElo,5,null,priorFens("after"));
       const P=L.reduce((a,x)=>a+x.p,0)||1;
       let ev=0;
       for(const x of L){
-        const e=await evalPos(make(ns,x.m),t);   // 相手が手を指した後の局面。相手の手番から見た値
+        // この候補の予算を、応手の数で等分する(一回あたり 150〜1500ms)
+        const per=Math.min(1500,Math.max(150,candBudget/L.length));
+        const e=await evalPos(make(ns,x.m),Math.round(per));   // 相手が手を指した後の局面。相手の手番から見た値
         ev+=(x.p/P)*(-e.cp);                      // 手番側(自分)の視点に直す
       }
+      remain-=Date.now()-cStart;
       const tp=L.reduce((a,x)=>x.p>a.p?x:a,L[0]);
       rows.push({m:c.m,sn,ev,top:san(ns,tp.m),pTop:tp.p/P});
     }

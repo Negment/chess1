@@ -95,7 +95,7 @@ async function fwRun(withMaia=false){
     Object.assign(FW,{key,sf:null,se:null,sfD:0,seD:0,maia:null,busy:true,err:""});renderEval();
     if(!ms.length){FW.busy=false;renderEval();return}
     SEARCH_HIST=histKeys();
-    const r=search(s,ms,250,6);
+    const r=search(s,ms,300);
     if(tk!==fwTok)return;
     FW.se=(s.t==="w"?1:-1)*Math.max(-3000,Math.min(3000,r.score));FW.seD=r.depth;renderEval();
     try{
