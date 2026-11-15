@@ -32,7 +32,7 @@ css/style.css       見た目
 js/chess.js         ルール(手の生成、FEN・SAN、局面の評価、自作エンジンの探索)
 js/engines.js       エンジンの呼び出し(Stockfish、自作、テーブルベース)、探索の順番待ち
 js/app.js           盤面と操作の画面
-js/review.js        形勢、対人の計算、棋譜の解析
+js/analysis.js        形勢、対人の計算、棋譜の解析
 js/kifu.js          棋譜の読み込みと書き出し
 js/style.js         棋風の設定
 js/auto.js          おまかせ(レートの算出、最適解)

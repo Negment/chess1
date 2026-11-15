@@ -450,7 +450,7 @@ function shouldDeepen(elapsed,last,prev,limit){
 function search(s0,ms,limit,maxD=40){
   const t0=Date.now();
   const s={...s0,b:s0.b.slice()};   // 呼び出し側の局面は変えない(探索は複製の上で、手の出し入れを行う)
-  nodes=0;tEnd=t0+limit*1.15;          // 猶予つきの打ち切り(これを超えたら、完了していない深さは捨てる)
+  nodes=0;tEnd=Infinity;               // 深さ1は必ず完了させる(結果が空にならないように)。猶予つきの打ち切りは深さ2から
   PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
   if(TT.size>TT_MAX*0.8)TT.clear();
   KILL=[];HIST.fill(0);
@@ -458,6 +458,7 @@ function search(s0,ms,limit,maxD=40){
   try{
     for(let d=1;d<=maxD;d++){
       if(d>1&&!shouldDeepen(Date.now()-t0,last,before,limit))break;
+      if(d===2)tEnd=t0+limit*1.15;   // ここから猶予つきの打ち切り(これを超えたら、完了していない深さは捨てる)
       const it0=Date.now();
       // アスピレーション窓: 4手目以降は、前の評価の周りだけを先に読む。外れたら広げて読み直す
       let lo=-MATE-1,hi=MATE+1,res;
