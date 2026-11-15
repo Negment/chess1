@@ -8,8 +8,8 @@
 - **場所**: `engines/stockfish/stockfish-19-single.js` / `.wasm`(単一スレッド版)
 - **ライセンス**: GNU General Public License v3.0(GPLv3)
 - **原典**: https://github.com/official-stockfish/Stockfish
-- **備考**: GPLv3のため、配布する場合は、ライセンス文の同梱と、対応するソースコードの入手方法の明示が必要です。このリポジトリには、ライセンス文の全文(`COPYING` など)はまだ含まれていません。
-- **注意**: `engines/stockfish/` には、18版や「lite」版のファイルも含まれています。アプリは `stockfish-19-single` を使いますが、他の版は現在使われていません。
+- **備考**: GPLv3のため、配布する場合は、ライセンス文の同梱と、対応するソースコードの入手方法の明示が必要です。ライセンス文の全文は、`engines/stockfish/COPYING` に含まれています。
+- **予備の版**: `engines/stockfish/` には、18版と「lite」版も含まれます。本体(19-single)が読めない場合に、アプリが順に試す予備です。同じ GPLv3 の条件に従います(原典は上と同じ)。
 
 ## 2. Maia3 の実装 `maia3-js` 0.2.0(同梱)
 
