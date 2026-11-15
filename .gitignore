@@ -2,3 +2,5 @@ node_modules/
 test-results/
 playwright-report/
 *.zip
+e2e*.log
+stockfish-state.log
