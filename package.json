@@ -3,6 +3,10 @@
   "private": true,
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "serve": "npx --yes http-server -c-1 -p 8080 ."
+    "serve": "npx --yes http-server -c-1 -p 8080 .",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
   }
 }

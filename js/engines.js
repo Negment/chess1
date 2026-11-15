@@ -60,7 +60,14 @@ async function sfInit(){
           w.onerror=()=>{clearTimeout(to);res(false)};
           w.postMessage("uci");
         });
-        if(ok){w.fname=f;sf=w;setSt("sfSt","準備完了: "+f);return sf}
+        if(ok){
+          // 置換表を32MBにし、1スレッド、新しい対局として初期化する
+          w.postMessage("setoption name Threads value 1");
+          w.postMessage("setoption name Hash value 32");
+          w.postMessage("ucinewgame");
+          w.postMessage("isready");
+          w.fname=f;sf=w;setSt("sfSt","準備完了: "+f);return sf
+        }
         w.terminate();
       }catch(x){}
     }

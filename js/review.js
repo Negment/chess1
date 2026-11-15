@@ -321,6 +321,7 @@ async function humanRun(){
   if(!legal(s).length){out.textContent="指せる手がありません";return}
   out.textContent="候補手を計算中…";
   let r;try{r=await best(s)}catch(e){if(e!==ABORT)out.textContent="最善手の計算に失敗しました";return}
+  const srcLine=srcNote(r);
   if(!r){out.textContent="候補がありません";return}
   const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))].slice(0,Math.max(1,+$("npv").value));
   const me=eloVal("eloMe"),op=eloVal("eloOpp"),rows=[];

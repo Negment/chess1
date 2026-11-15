@@ -148,12 +148,30 @@ function make(s,m){
   for(const q of[m.f,m.t]){if(q===63)c=c.replace("K","");if(q===56)c=c.replace("Q","");if(q===7)c=c.replace("k","");if(q===0)c=c.replace("q","")}
   return {b,t:w?"b":"w",c,e,h:(u==="P"||cap)?0:s.h+1,n:s.n+(w?0:1)};
 }
+/* 1手を指した後に、自分の王が攻撃されていないか。盤面を一時的に書き換えて戻す(複製しない)。
+   キャスリングとアンパッサンは特殊なので、従来の make で確かめる。 */
+function legalAfter(s,m,w,kSq){
+  const p=s.b[m.f],u=p.toUpperCase();
+  if((u==="K"&&Math.abs(m.t-m.f)===2)||(u==="P"&&m.t===s.e&&!s.b[m.t]))return !inCheck(make(s,m),w);
+  const b=s.b,cap=b[m.t];
+  b[m.t]=m.pr?(w?m.pr.toUpperCase():m.pr):p;b[m.f]="";
+  const k=u==="K"?m.t:kSq;
+  const ok=k<0||!attacked(b,k,!w);
+  b[m.f]=p;b[m.t]=cap;
+  return ok;
+}
 function legal(s,caps){
-  const w=s.t==="w";
+  const w=s.t==="w",kSq=s.b.indexOf(w?"K":"k");
   return pseudo(s).filter(m=>{
     if(caps&&!(s.b[m.t]||m.pr||(s.b[m.f].toUpperCase()==="P"&&m.t===s.e)))return false;
-    return !inCheck(make(s,m),w);
+    return legalAfter(s,m,w,kSq);
   });
+}
+/* 合法手が1つでもあるか(ステイルメイトの判定用。全部は作らない) */
+function hasLegal(s){
+  const w=s.t==="w",kSq=s.b.indexOf(w?"K":"k");
+  for(const m of pseudo(s))if(legalAfter(s,m,w,kSq))return true;
+  return false;
 }
 
 /* ---------- 局面の同一判定(FIDE: アンパッサンは「実際に取れる時」だけ区別する) ---------- */
@@ -282,19 +300,50 @@ function order(s,ms,first,ply){
 const keyOf=s=>s.b.map(p=>p||".").join("")+s.t+s.c+(epLegal(s)?"e"+s.e:"");   // 取れるアンパッサンだけ区別(rkey と同じ考え)
 let SEARCH_HIST=new Set(),PATHK=[];
 
+/* 盤面を書き換えて1手指す(探索用)。戻すための記録を返す。複製はしない。 */
+function playInPlace(s,m){
+  const b=s.b,p=b[m.f],w=isW(p),cap=b[m.t],u=p.toUpperCase();
+  const rec={p,cap,t:s.t,c:s.c,e:s.e,h:s.h,n:s.n,ep:null,rook:null};
+  b[m.t]=m.pr?(w?m.pr.toUpperCase():m.pr):p;b[m.f]="";
+  if(u==="P"&&m.t===s.e&&!cap){const q=m.t+(w?8:-8);rec.ep=[q,b[q]];b[q]=""}
+  if(u==="K"&&Math.abs(m.t-m.f)===2){
+    if(m.t>m.f){rec.rook=[m.f+3,b[m.f+3],m.f+1,b[m.f+1]];b[m.f+1]=b[m.f+3];b[m.f+3]=""}
+    else{rec.rook=[m.f-4,b[m.f-4],m.f-1,b[m.f-1]];b[m.f-1]=b[m.f-4];b[m.f-4]=""}
+  }
+  let c=s.c;
+  if(p==="K")c=c.replace("K","").replace("Q","");
+  if(p==="k")c=c.replace("k","").replace("q","");
+  for(const q of[m.f,m.t]){if(q===63)c=c.replace("K","");if(q===56)c=c.replace("Q","");if(q===7)c=c.replace("k","");if(q===0)c=c.replace("q","")}
+  s.t=w?"b":"w";s.c=c;
+  s.e=(u==="P"&&Math.abs(m.t-m.f)===16&&RULES.ep)?(m.f+m.t)/2:-1;
+  s.h=(u==="P"||cap)?0:s.h+1;s.n=s.n+(w?0:1);
+  return rec;
+}
+function undoInPlace(s,m,rec){
+  const b=s.b;
+  b[m.f]=rec.p;b[m.t]=rec.cap;
+  if(rec.ep)b[rec.ep[0]]=rec.ep[1];
+  if(rec.rook){b[rec.rook[0]]=rec.rook[1];b[rec.rook[2]]=rec.rook[3]}
+  s.t=rec.t;s.c=rec.c;s.e=rec.e;s.h=rec.h;s.n=rec.n;
+}
 function qs(s,a,b,ply){
   chk();ply=ply||0;
   const ic=inCheck(s,s.t==="w");
   if(ic&&ply<30){
     const ms=legal(s);if(!ms.length)return -(MATE-ply);
-    for(const m of order(s,ms)){const sc=-qs(make(s,m),-b,-a,ply+1);if(sc>=b)return sc;if(sc>a)a=sc}
+    for(const m of order(s,ms)){
+      const rec=playInPlace(s,m);let sc;
+      try{sc=-qs(s,-b,-a,ply+1)}finally{undoInPlace(s,m,rec)}
+      if(sc>=b)return sc;if(sc>a)a=sc;
+    }
     return a;
   }
   const st=ev(s);if(st>=b)return st;if(st>a)a=st;
   const cs=legal(s,true);
-  if(!cs.length&&!ic&&!legal(s).length)return 0;   // ステイルメイト(駒の数に関係なく引き分け)
+  if(!cs.length&&!ic&&!hasLegal(s))return 0;   // ステイルメイト(駒の数に関係なく引き分け)
   for(const m of order(s,cs)){
-    const sc=-qs(make(s,m),-b,-a,ply+1);
+    const rec=playInPlace(s,m);let sc;
+    try{sc=-qs(s,-b,-a,ply+1)}finally{undoInPlace(s,m,rec)}
     if(sc>=b)return sc;if(sc>a)a=sc;
   }
   return a;
@@ -309,7 +358,6 @@ function nm(s,d,a,b,ply){
   // 詰みの距離による枝刈り: 今より長い詰みは、読んでも結果が変わらない
   a=Math.max(a,-MATE+ply);b=Math.min(b,MATE-ply-1);
   if(a>=b)return a;
-  // 王手の延長は、測定で効果がなく深さが落ちたので入れていない
   if((d<=0&&!ic)||ply>32)return qs(s,a,b,ply);
   const ms=legal(s);
   if(!ms.length)return ic?-(MATE-ply):0;
@@ -341,16 +389,18 @@ function nm(s,d,a,b,ply){
       const m=ord[i];
       const quiet=!s.b[m.t]&&!m.pr&&!(s.b[m.f].toUpperCase()==="P"&&m.t===s.e);
       const late=i>=3&&d>=3&&quiet&&!ic;     // 後ろの静かな手は浅く読む(LMR)
-      const child=make(s,m);
+      const rec=playInPlace(s,m);
       let sc;
-      if(i===0){
-        sc=-nm(child,d-1,-b,-a,ply+1);       // 最初の手は全幅
-      }else{
-        // PVS: 残りの手は狭い窓で「最善手より良いか」だけを確かめる
-        sc=late?-nm(child,d-2,-a-1,-a,ply+1):-nm(child,d-1,-a-1,-a,ply+1);
-        if(late&&sc>a)sc=-nm(child,d-1,-a-1,-a,ply+1);   // 浅く読んで良さそうなら、通常の深さで読み直す
-        if(sc>a&&sc<b)sc=-nm(child,d-1,-b,-a,ply+1);     // 良くなったので、正確な値を出す
-      }
+      try{
+        if(i===0){
+          sc=-nm(s,d-1,-b,-a,ply+1);         // 最初の手は全幅
+        }else{
+          // PVS: 残りの手は狭い窓で「最善手より良いか」だけを確かめる
+          sc=late?-nm(s,d-2,-a-1,-a,ply+1):-nm(s,d-1,-a-1,-a,ply+1);
+          if(late&&sc>a)sc=-nm(s,d-1,-a-1,-a,ply+1);   // 浅く読んで良さそうなら、通常の深さで読み直す
+          if(sc>a&&sc<b)sc=-nm(s,d-1,-b,-a,ply+1);     // 良くなったので、正確な値を出す
+        }
+      }finally{undoInPlace(s,m,rec)}
       if(sc>best){best=sc;bm=m}
       if(sc>a)a=sc;
       if(a>=b){
@@ -373,13 +423,15 @@ function nm(s,d,a,b,ply){
 function rootSearch(s,ms,first,d,lo,hi){
   let a=lo,bestSc=-MATE-1,cb=null,i=0;
   for(const m of order(s,ms,first,0)){
-    const child=make(s,m);
+    const rec=playInPlace(s,m);
     let sc;
-    if(i===0)sc=-nm(child,d-1,-hi,-a,1);
-    else{
-      sc=-nm(child,d-1,-a-1,-a,1);
-      if(sc>a&&sc<hi)sc=-nm(child,d-1,-hi,-a,1);
-    }
+    try{
+      if(i===0)sc=-nm(s,d-1,-hi,-a,1);
+      else{
+        sc=-nm(s,d-1,-a-1,-a,1);
+        if(sc>a&&sc<hi)sc=-nm(s,d-1,-hi,-a,1);
+      }
+    }finally{undoInPlace(s,m,rec)}
     i++;
     if(sc>bestSc){bestSc=sc;cb=m}
     if(sc>a)a=sc;
@@ -395,8 +447,9 @@ function shouldDeepen(elapsed,last,prev,limit){
   return elapsed+0.8*last*ratio<=limit;
 }
 
-function search(s,ms,limit,maxD=40){
+function search(s0,ms,limit,maxD=40){
   const t0=Date.now();
+  const s={...s0,b:s0.b.slice()};   // 呼び出し側の局面は変えない(探索は複製の上で、手の出し入れを行う)
   nodes=0;tEnd=t0+limit*1.15;          // 猶予つきの打ち切り(これを超えたら、完了していない深さは捨てる)
   PATHK.length=0;PATHK.push(s.h>=4?keyOf(s):null);
   if(TT.size>TT_MAX*0.8)TT.clear();

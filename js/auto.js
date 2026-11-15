@@ -2,24 +2,29 @@
 /* ---------- おまかせ ---------- */
 const colorName=c=>c==="w"?"白":"黒";   // 注意: chess.js に nm() があるので別名にする
 
-/* 平均損失(ACPL, cp)から目安のレートを求める。表の間は直線で補間する。 */
-const ACPL_TABLE=[[10,2800],[20,2400],[30,2150],[50,1850],[80,1450],[120,1100],[200,700]];
-function acplToRating(a){
-  const T=ACPL_TABLE;
-  if(a<=T[0][0])return T[0][1];
-  if(a>=T[T.length-1][0])return T[T.length-1][1];
-  for(let k=1;k<T.length;k++)if(a<=T[k][0]){
+/* 勝率の損失(%ポイント)から、目安のレートを求める。表の間は直線で補間する。
+   表は、従来の cp の表を、互角付近の傾き(1cpあたり約0.0014%)で換算したもの。 */
+const LOSS_TABLE=[[1.4,2800],[2.9,2400],[4.3,2150],[7.2,1850],[11.5,1450],[17,1100],[29,700]];
+function lossToRating(x){
+  const T=LOSS_TABLE;
+  if(x<=T[0][0])return T[0][1];
+  if(x>=T[T.length-1][0])return T[T.length-1][1];
+  for(let k=1;k<T.length;k++)if(x<=T[k][0]){
     const[x0,y0]=T[k-1],[x1,y1]=T[k];
-    return Math.round(y0+(y1-y0)*(a-x0)/(x1-x0));
+    return Math.round(y0+(y1-y0)*(x-x0)/(x1-x0));
   }
   return T[T.length-1][1];
 }
+/* 評価(cp、手番側の視点)を勝率(%)にする */
+const winPct=cp=>100/(1+Math.pow(10,-cp/400));
 
-/* 復習タブの解析から、指定した側の平均損失(cp)。手が少なすぎれば null。 */
-function sideAcpl(c){
-  const done=rvRows().filter(r=>r.cls&&r.mover===c);
+/* 復習タブの解析から、指定した側の平均の勝率の損失(%ポイント)。手が少なすぎれば null。
+   1手の損失は、評価が大きく動いても 50 で頭打ちにする(詰み圏の大きな数字で平均が歪まないように)。 */
+function sideLoss(c){
+  const done=rvRows().filter(r=>r.cls&&r.mover===c&&r.before!=null);
   if(done.length<8)return null;
-  return done.reduce((t,x)=>t+Math.min(x.loss||0,500),0)/done.length;
+  const losses=done.map(r=>Math.min(50,Math.max(0,winPct(r.before)-winPct(r.after))));
+  return losses.reduce((a,b)=>a+b,0)/losses.length;
 }
 
 function setElo(id,v){$(id).value=v;$(id+"R").value=v;if(typeof eloWarn==="function")eloWarn()}
@@ -38,13 +43,13 @@ async function autoRate(){
   out.textContent="エンジンで全手を解析中…(手数によって時間がかかります)";
   await gaRun(false);
   const s=S(),mv=s.t,op=mv==="w"?"b":"w";
-  const aM=sideAcpl(mv),aO=sideAcpl(op);
-  const rate=a=>a==null?null:acplToRating(a);
+  const aM=sideLoss(mv),aO=sideLoss(op);
+  const rate=a=>a==null?null:lossToRating(a);
   const lines=[];
     for(const c of["w","b"]){
-    const a=sideAcpl(c);
+    const a=sideLoss(c);
     lines.push(a==null?`${colorName(c)}: 解析できた手が少ないため算出できません(各側8手以上が目安)`
-      :`${colorName(c)}: 平均損失 ${(a/100).toFixed(2)} → レートの目安 ${rate(a)}`);
+      :`${colorName(c)}: 平均の勝率の損失 ${a.toFixed(2)}% → レートの目安 ${rate(a)}`);
   }
   if(rate(aM)!=null)setElo("eloMe",rate(aM));
   if(rate(aO)!=null)setElo("eloOpp",rate(aO));
@@ -86,6 +91,7 @@ async function autoBest(){
   finally{npvSel.value=savedN}
   if(!r||!r.m){out.textContent="候補を出せませんでした";return}
   const cands=[{m:r.m,cp:r.cp},...(r.alts||[]).map(a=>({m:a.m,cp:a.cp}))].slice(0,3);
+  log.push(srcNote(r));
 
   // 2. 各候補について、相手の応手の確率で重みづけしたStockfish評価を出す
   // 予算: 全体で OB ミリ秒。候補ごとに残りを等分し、使い残しは次の候補に回す
@@ -143,6 +149,14 @@ async function autoBest(){
     if(toFen(S())!==fen0){msg("局面が変わったため、もう一度算出してください");return}
     if(pick.m)doMove(pick.m);
   };
+}
+
+/* 候補の出どころを、画面に出す文字にする。自作エンジンへの切り替えは警告にする。 */
+function srcNote(r){
+  if(!r)return "";
+  if(r.src==="sf")return "候補の出どころ: Stockfish";
+  if(r.src==="tb")return "候補の出どころ: テーブルベース(オンライン)";
+  return "⚠ 候補の出どころ: 自作エンジン(Stockfishが使えなかったため。候補の質は低めです)";
 }
 
 /* 白と黒の棋風設定を入れ替える */
