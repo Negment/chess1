@@ -107,3 +107,19 @@ select,input,textarea{max-width:100%}
 .stsl{display:grid;grid-template-columns:11em 1fr;gap:6px;align-items:center;margin:6px 0}
 .stsl input[type=range]{width:6.5em;vertical-align:middle}
 .stl input[type=range]{width:7em;vertical-align:middle}
+
+/* 凡例と悪手の色(矢印の色と同じ) */
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px}
+.lg{display:inline-flex;align-items:center;gap:4px}
+.sw{display:inline-block;width:18px;height:6px;border-radius:3px}
+.sw.au{background:#e0a800}
+.sw.bk{background:#111111}
+.sw.pk{background:#d6452f}
+.sw.gy{background:repeating-linear-gradient(90deg,#d6452f 0 4px,transparent 4px 7px)}
+.sw.me{background:#1f9d55}
+.sw.opp{background:#1f9d55}
+.sw.mh{background:#2f6fd6}
+.sw.st{background:#8e44ad}
+.lg-bk-txt{color:#111111}
+.lg-pk-txt{color:#d6452f}
+.lg-gy-txt{color:#d6452f}

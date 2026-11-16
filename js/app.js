@@ -3,6 +3,7 @@
 let hist=[{s:parseFen(START),label:"初期配置"}],pos=0;
 let curTab="ana",batch=0;
 let autoPick=null,autoPickFen="";   // おまかせで選んだ手と、その時の局面(局面が変わると矢印を消す)
+let badPicks={lose:[],bad:[],meh:[]},badFen="";   // 悪手の表示(局面が変わると消す)
 let mode="play",flipped=false,sel=null,pal="K",results=[],token=0,mres=null,draft=null;
 const S=()=>hist[pos].s;
 function validate(s){
@@ -84,7 +85,7 @@ function drawArrows(){
   const svg=$("ar");if(!svg)return;
   const P=q=>[(flipped?7-(q&7):q&7)+.5,(flipped?7-(q>>3):q>>3)+.5];
   let o='<defs>';
-  for(const[k,c]of[["me","#1f9d55"],["opp","#d6452f"],["mh","#2f6fd6"],["st","#8e44ad"],["au","#e0a800"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
+  for(const[k,c]of[["me","#1f9d55"],["opp","#1f9d55"],["mh","#2f6fd6"],["st","#8e44ad"],["au","#e0a800"],["bk","#111111"],["pk","#d6452f"],["gy","#d6452f"]])o+=`<marker id="m${k}" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto"><path d="M0,0L3,1.5L0,3z" fill="${c}"/></marker>`;
   o+="</defs>";
   if(autoPick&&autoPickFen===toFen(S())){
     const[x1,y1]=P(autoPick.f);let[x2,y2]=P(autoPick.t);
@@ -93,7 +94,7 @@ function drawArrows(){
   }
   for(const r of results){
     if(!r.m)continue;
-    const c=r.w==="me"?"#1f9d55":"#d6452f";
+    const c="#1f9d55";
     [[r.m,.8,.16],...(r.alts||[]).map(a=>[a.m,.35,.1])].forEach(([m,op,wd])=>{
       const[x1,y1]=P(m.f);let[x2,y2]=P(m.t);
       const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy)||1;
@@ -111,6 +112,12 @@ function drawArrows(){
     const[x1,y1]=P(it.m.f);let[x2,y2]=P(it.m.t);
     const dx=x2-x1,dy=y2-y1,Ln=Math.hypot(dx,dy)||1;x2-=dx/Ln*.3;y2-=dy/Ln*.3;
     o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2f6fd6" stroke-width="${.06+.12*it.p}" stroke-opacity="${.3+.6*it.p}" marker-end="url(#mmh)"/>`;
+  }
+  if(badFen===toFen(S())){
+    const seg=(m,c,wd,op,dash,mk)=>{const[x1,y1]=P(m.f);let[x2,y2]=P(m.t);const dx=x2-x1,dy=y2-y1,Ln=Math.hypot(dx,dy)||1;x2-=dx/Ln*.3;y2-=dy/Ln*.3;return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${wd}" stroke-opacity="${op}"${dash?` stroke-dasharray="${dash}"`:""} marker-end="url(#m${mk})"/>`};
+    for(const m of badPicks.meh)o+=seg(m,"#d6452f",.14,.8,".25 .15","gy");
+    for(const m of badPicks.bad)o+=seg(m,"#d6452f",.18,.85,"","pk");
+    for(const m of badPicks.lose)o+=seg(m,"#111111",.2,.95,"","bk");
   }
   svg.innerHTML=o;
 }

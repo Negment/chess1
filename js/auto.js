@@ -211,3 +211,52 @@ function applyRules(){
   w("ruleCastle",()=>applyRules());
   w("ruleEP",()=>applyRules());
 }
+
+/* 全部の合法手を、負け・推奨しない・注意に分ける(純粋な計算)。
+   ranked: [{m, sn, sc}]、sc は {cp} か {mate}(手番側から見た値)。 */
+function classifyMoves(ranked){
+  const wpOf=sc=>sc.mate!=null?(sc.mate>0?100:0):winPct(Math.max(-3000,Math.min(3000,sc.cp)));
+  let best=-1;for(const x of ranked)best=Math.max(best,wpOf(x.sc));
+  const lose=[],bad=[],meh=[];
+  for(const x of ranked){
+    const loss=best-wpOf(x.sc);
+    if(x.sc.mate!=null&&x.sc.mate<0)lose.push({...x,loss});       // 指すと詰まされる
+    else if(loss>=15)bad.push({...x,loss});                       // 勝率が15%以上落ちる
+    else if(loss>=5)meh.push({...x,loss});                        // 勝率が5〜15%落ちる
+  }
+  const byLoss=(a,b)=>b.loss-a.loss;
+  lose.sort(byLoss);bad.sort(byLoss);meh.sort(byLoss);
+  return{lose,bad,meh};
+}
+
+/* 悪手の表示: 全部の合法手を評価し、色つきの矢印と一覧で出す */
+async function badRun(){
+  const out=$("badRes"),s=S(),err=validate(s);
+  if(err){out.textContent=err;return}
+  const ms=legal(s);
+  if(!ms.length){out.textContent="指せる手がありません";return}
+  out.textContent="全部の手を評価しています…";
+  const w=await sfLoad();
+  if(!w){out.innerHTML='<div class="sub">Stockfishが使えないため、悪手は出せません。自作エンジンの評価は粗いので、表示しません。</div>';return}
+  const t=Math.min(+$("tl").value,3000);
+  const fen0=toFen(s);
+  let L;try{L=await sfBest(w,s,ms,ms,t,ms.length,"ui")}
+  catch(e){if(e===ABORT)return;out.textContent="計算に失敗しました";return}
+  if(toFen(S())!==fen0)return;
+  const ranked=L.filter(x=>x.m).map(x=>({m:x.m,sn:san(s,x.m),sc:x.sc}));
+  const{lose,bad,meh}=classifyMoves(ranked);
+  badPicks={lose:lose.map(x=>x.m),bad:lose.length?[]:bad.map(x=>x.m),meh:meh.slice(0,3).map(x=>x.m)};
+  badFen=fen0;
+  const row=(x,cls)=>`<div class="sub ${cls}">${x.sn}(勝率の損失 ${x.loss.toFixed(1)}%)</div>`;
+  let html="";
+  if(lose.length)html+=`<div class="res lg-bk-txt"><b>負けになる手(${lose.length}手)</b></div>`+lose.map(x=>row(x,"lg-bk-txt")).join("");
+  else if(bad.length)html+=`<div class="res lg-pk-txt"><b>推奨しない手(${bad.length}手)</b></div>`+bad.map(x=>row(x,"lg-pk-txt")).join("");
+  else html+='<div class="sub">大きく損する手はありません。</div>';
+  if(meh.length)html+=`<div class="sub"><b>注意(最悪ではないが推奨しない手)</b></div>`+meh.slice(0,3).map(x=>row(x,"lg-gy-txt")).join("");
+  out.innerHTML=html;
+  if(mode==="play")drawArrows();
+}
+{
+  const bg=document.getElementById("badGo");
+  if(bg)bg.onclick=()=>{badRun()};
+}

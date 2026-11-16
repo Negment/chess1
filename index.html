@@ -36,6 +36,18 @@
     <h2>おまかせ</h2>
     <div class="row"><button id="autoRate">レートを自動算出(エンジンで解析)</button><button id="autoGo" class="go">最適解を算出</button></div>
     <div id="autoRes" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:6px"><button id="badGo">悪手を表示</button></div>
+    <div id="badRes" style="margin-top:6px"></div>
+    <div class="legend">
+      <span class="lg"><i class="sw au"></i>最適解</span>
+      <span class="lg"><i class="sw bk"></i>負けになる手(詰まされる)</span>
+      <span class="lg"><i class="sw pk"></i>推奨しない手(勝率の損失 15%以上)</span>
+      <span class="lg"><i class="sw gy"></i>注意(赤の点線・損失 5〜15%)</span>
+      <span class="lg"><i class="sw me"></i>自分の最善手(エンジン)</span>
+      <span class="lg"><i class="sw opp"></i>相手の最善手(緑・駒の色で判別)</span>
+      <span class="lg"><i class="sw mh"></i>Maiaの予想(人間の手)</span>
+      <span class="lg"><i class="sw st"></i>棋風の手</span>
+    </div>
     <div class="sub">「レートを自動算出」は、この棋譜の全手をエンジンで解析し、平均損失から目安のレートを入れます(復習タブの解析と同じ結果を使います)。「最適解を算出」は、レート・履歴(Maiaに渡す)・Stockfishの候補・Maiaの応手予想を組み合わせ、期待勝率の高い手を出します。棋風は、棋風タブで設定されているときだけ考慮します。手は自動では指しません。</div>
   </div>
 
